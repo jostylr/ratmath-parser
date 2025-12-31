@@ -1,10 +1,10 @@
 {
-    "name": "ratmath-parser",
-    "version": "1.0.0",
+    "name": "@ratmath/parser",
+    "version": "0.2.0",
     "description": "Expression parser for ratmath",
-    "main": "src/index.js",
+    "main": "index.js",
     "type": "module",
     "dependencies": {
-        "ratmath": "file:../ratmath"
+        "@ratmath/core": "^0.2.0"
     }
 }

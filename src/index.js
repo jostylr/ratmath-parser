@@ -26,7 +26,7 @@ import {
   LOG,
   newtonRoot,
   rationalIntervalPower,
-} from "ratmath";
+} from "@ratmath/core";
 
 const DEFAULT_PRECISION = -6; // 10^-6
 
