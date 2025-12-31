@@ -28,6 +28,8 @@ import {
   rationalIntervalPower,
 } from "@ratmath/core";
 
+export { BaseParser } from "./base-parser.js";
+
 const DEFAULT_PRECISION = -6; // 10^-6
 
 /**
