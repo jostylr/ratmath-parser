@@ -13,6 +13,9 @@ import {
   BaseSystem,
   Fraction,
   FractionInterval,
+} from "@ratmath/core";
+
+import {
   PI,
   E,
   SIN,
@@ -26,7 +29,7 @@ import {
   LOG,
   newtonRoot,
   rationalIntervalPower,
-} from "@ratmath/core";
+} from "@ratmath/reals";
 
 export { BaseParser } from "./base-parser.js";
 

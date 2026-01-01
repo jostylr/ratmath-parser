@@ -5,6 +5,7 @@
     "main": "index.js",
     "type": "module",
     "dependencies": {
-        "@ratmath/core": "^0.2.0"
+        "@ratmath/core": "^0.2.0",
+        "@ratmath/reals": "^0.1.0"
     }
 }
