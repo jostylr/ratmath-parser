@@ -2843,12 +2843,15 @@ export class Parser {
     }
 
     // Check for input base parsing first if specified
+    const debugMatch = expr.trim().match(/^(-?)0[a-zA-Z]/);
+    // console.log(`Parser Debug: expr='${expr}', match=${!!debugMatch}, inputBase=${options.inputBase?.name}`);
+
     if (
       options.inputBase &&
       options.inputBase !== BaseSystem.DECIMAL &&
       !expr.includes("[") &&
       !expr.includes("#") &&
-      !expr.trim().match(/^(-?)0[a-zA-Z]/)
+      !debugMatch
     ) {
       // Try to parse the entire expression with input base first
       try {
