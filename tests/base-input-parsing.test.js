@@ -124,19 +124,21 @@ describe("Base-Aware Input Parsing", () => {
     it("should use explicit base notation over input base", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 12[10] should parse as decimal 12, not base 3
-      const result = Parser.parse("12[10]", options);
+      // 0b101 is 5 decimal. Input base 3 would treat '101' as 10 (decimal).
+      // But prefix overrides input base.
+      const result = Parser.parse("0b101", options);
       expect(result).toBeInstanceOf(Integer);
-      expect(result.value).toBe(12n);
+      expect(result.value).toBe(5n);
     });
 
     it("should handle E notation in explicit base notation", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 12E2[10] should be 12 * 10^2 = 1200 (all in decimal)
-      const result = Parser.parse("12E2[10]", options);
+      // 0b10E10 (binary) -> 2 * 2^2 = 8
+      // Input base 3 would calculate differently if no prefix.
+      const result = Parser.parse("0b10E10", options);
       expect(result).toBeInstanceOf(Integer);
-      expect(result.value).toBe(1200n);
+      expect(result.value).toBe(8n);
     });
   });
 
@@ -160,6 +162,11 @@ describe("Base-Aware Input Parsing", () => {
 
       // "3E2" - the "3" falls back to decimal but "E2" uses base 3 for exponent
       // So this becomes 3 * 3^2 = 3 * 9 = 27
+      // Wait, 3 is invalid in base 3. Is `3E2` valid?
+      // parseInterval checks input base. '3' fails.
+      // Falls back. Decimal rules apply for "3".
+      // Then E notation. Exponent "2" is valid in base 3.
+      // BaseSystem logic: parseENotation uses baseSystem.
       const result = Parser.parse("3E2", options);
       expect(result).toBeInstanceOf(Integer);
       expect(result.value).toBe(27n);
@@ -179,11 +186,10 @@ describe("Base-Aware Input Parsing", () => {
     it("should handle mixed expressions with explicit and implicit base", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 12 + 5[10] = 12 (decimal) + 5 (explicit base 10) = 17
-      // Note: In expression context, "12" is parsed as decimal, not base 3
-      const result = Parser.parse("12 + 5[10]", options);
+      // 12 (base 3 = 5) + 0b10 (binary = 2) = 7
+      const result = Parser.parse("12 + 0b10", options);
       expect(result).toBeInstanceOf(Integer);
-      expect(result.value).toBe(17n);
+      expect(result.value).toBe(7n);
     });
 
     it("should handle parentheses with input base", () => {
