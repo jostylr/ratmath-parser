@@ -64,6 +64,16 @@ describe("Base-Aware Input Parsing", () => {
       expect(result.value).toBe(45n);
     });
 
+    it("should NOT handle lowercase e notation (Strict Mode)", () => {
+      const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
+
+      // 12e2 - 'e' is not a digit in base 3. 
+      // Since 'e' is not allowed for notation, this should stop parsing at '12' or throw.
+      // Parser.parse expects full string match usually? Or might parse "12" and leave "e2"?
+      // If full match required, it throws.
+      expect(() => Parser.parse("12e2", options)).toThrow();
+    });
+
     it("should parse exponent in input base", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 

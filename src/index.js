@@ -3110,6 +3110,7 @@ export class Parser {
       let hasDecimalPoint = false;
       let hasMixedNumber = false;
       let hasFraction = false;
+      let hasExponent = false;
       let validationBase = options.inputBase;
 
       // Handle negative sign
@@ -3200,36 +3201,25 @@ export class Parser {
               }
             }
           }
-        } else if (char === "E" || char === "e") {
-          if (validationBase.characters.includes("E") || validationBase.characters.includes("e")) {
-            endIndex++;
-          } else if (isExplicitPrefix) {
-            // Treat E as separator for Explicit Base Notation (consume it)
-            endIndex++;
-            // If next char is sign, consume it too
-            if (endIndex < expr.length && (expr[endIndex] === "+" || expr[endIndex] === "-")) {
-              endIndex++;
-            }
-          } else {
-            // E notation in decimal (implicit)
-            break;
-          }
+        } else if (validationBase.characters.includes(char.toUpperCase()) && (char === "E" || char === "e")) {
+          // If 'E' or 'e' is a valid digit in the current base (e.g., Hexadecimal)
+          endIndex++;
         } else if (
-          char === "_" &&
-          endIndex + 1 < expr.length &&
-          expr[endIndex + 1] === "^"
+          (char === "E" && !options.disableENotation) ||
+          (char === "_" && endIndex + 1 < expr.length && expr[endIndex + 1] === "^")
         ) {
-          // _^ notation
-          if (isExplicitPrefix) {
-            endIndex += 2; // Consume _^
-            // If next char is sign, consume it too
-            if (endIndex < expr.length && (expr[endIndex] === "+" || expr[endIndex] === "-")) {
-              endIndex++;
-            }
-          } else {
-            break;
+          // E-notation or Base-aware scientific notation (_^)
+          // Allowed if strict E-notation enabled (removed 'e' check) or explicit prefix uses _^
+          hasExponent = true;
+          endIndex += (char === "_") ? 2 : 1;
+
+          // Consume optional sign
+          if (endIndex < expr.length && (expr[endIndex] === "+" || expr[endIndex] === "-")) {
+            endIndex++;
           }
+          // Continue to consume exponent digits loop
         } else {
+          // Invalid character for this base
           break;
         }
       }
