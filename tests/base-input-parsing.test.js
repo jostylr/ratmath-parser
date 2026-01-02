@@ -58,8 +58,8 @@ describe("Base-Aware Input Parsing", () => {
     it("should handle E notation in input base (non-E containing bases)", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 12E2 in base 3 = 5 * 3^2 = 5 * 9 = 45
-      const result = Parser.parse("12E2", options);
+      // 12_^2 in base 3 = 5 * 3^2 = 5 * 9 = 45
+      const result = Parser.parse("12_^2", options);
       expect(result).toBeInstanceOf(Integer);
       expect(result.value).toBe(45n);
     });
@@ -77,8 +77,8 @@ describe("Base-Aware Input Parsing", () => {
     it("should parse exponent in input base", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 12E12 in base 3: 12 (base 3) = 5, E12 (base 3) = E5, so 5 * 3^5 = 5 * 243 = 1215
-      const result = Parser.parse("12E12", options);
+      // 12_^12 in base 3: 12 (base 3) = 5, _^12 (base 3) = _^5, so 5 * 3^5 = 5 * 243 = 1215
+      const result = Parser.parse("12_^12", options);
       expect(result).toBeInstanceOf(Integer);
       expect(result.value).toBe(1215n);
     });
@@ -86,8 +86,8 @@ describe("Base-Aware Input Parsing", () => {
     it("should handle negative exponents in base-aware E notation", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 12E-1 in base 3 = 5 * 3^(-1) = 5/3
-      const result = Parser.parse("12E-1", options);
+      // 12_^-1 in base 3 = 5 * 3^(-1) = 5/3
+      const result = Parser.parse("12_^-1", options);
       expect(result).toBeInstanceOf(Rational);
       expect(result.numerator).toBe(5n);
       expect(result.denominator).toBe(3n);
@@ -113,8 +113,8 @@ describe("Base-Aware Input Parsing", () => {
     it("should handle fractional base with E notation", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 12.1E1 in base 3 = (16/3) * 3^1 = 16/3 * 3 = 16
-      const result = Parser.parse("12.1E1", options);
+      // 12.1_^1 in base 3 = (16/3) * 3^1 = 16/3 * 3 = 16
+      const result = Parser.parse("12.1_^1", options);
       expect(result).toBeInstanceOf(Integer);
       expect(result.value).toBe(16n);
     });
@@ -122,8 +122,8 @@ describe("Base-Aware Input Parsing", () => {
     it("should handle E notation with fractions", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 12/2E1 in base 3 = (5/2) * 3^1 = 15/2
-      const result = Parser.parse("12/2E1", options);
+      // 12/2_^1 in base 3 = (5/2) * 3^1 = 15/2
+      const result = Parser.parse("12/2_^1", options);
       expect(result).toBeInstanceOf(Rational);
       expect(result.numerator).toBe(15n);
       expect(result.denominator).toBe(2n);
@@ -144,9 +144,9 @@ describe("Base-Aware Input Parsing", () => {
     it("should handle E notation in explicit base notation", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // 0b10E10 (binary) -> 2 * 2^2 = 8
+      // 0b10_^10 (binary) -> 2 * 2^2 = 8
       // Input base 3 would calculate differently if no prefix.
-      const result = Parser.parse("0b10E10", options);
+      const result = Parser.parse("0b10_^10", options);
       expect(result).toBeInstanceOf(Integer);
       expect(result.value).toBe(8n);
     });
@@ -163,24 +163,10 @@ describe("Base-Aware Input Parsing", () => {
     it("should throw error for invalid exponent in base-aware E notation", () => {
       const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
 
-      // E3 contains invalid digit '3' for base 3 exponent
-      expect(() => Parser.parse("12E3", options)).toThrow();
+      // _^3 contains invalid digit '3' for base 3 exponent
+      expect(() => Parser.parse("12_^3", options)).toThrow();
     });
 
-    it("should handle E notation with mixed base interpretation", () => {
-      const options = { inputBase: BaseSystem.fromBase(3), typeAware: true };
-
-      // "3E2" - the "3" falls back to decimal but "E2" uses base 3 for exponent
-      // So this becomes 3 * 3^2 = 3 * 9 = 27
-      // Wait, 3 is invalid in base 3. Is `3E2` valid?
-      // parseInterval checks input base. '3' fails.
-      // Falls back. Decimal rules apply for "3".
-      // Then E notation. Exponent "2" is valid in base 3.
-      // BaseSystem logic: parseENotation uses baseSystem.
-      const result = Parser.parse("3E2", options);
-      expect(result).toBeInstanceOf(Integer);
-      expect(result.value).toBe(27n);
-    });
   });
 
   describe("Complex Expressions with Input Base", () => {
@@ -272,8 +258,8 @@ describe("Base-Aware Input Parsing", () => {
     it("should handle binary E notation", () => {
       const options = { inputBase: BaseSystem.BINARY, typeAware: true };
 
-      // 101E10 in binary = 5 * 2^2 = 5 * 4 = 20
-      const result = Parser.parse("101E10", options);
+      // 101_^10 in binary = 5 * 2^2 = 5 * 4 = 20
+      const result = Parser.parse("101_^10", options);
       expect(result).toBeInstanceOf(Integer);
       expect(result.value).toBe(20n);
     });

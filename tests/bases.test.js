@@ -1098,10 +1098,11 @@ describe("BaseSystem", () => {
     });
 
     describe("Base-Aware E Notation", () => {
-      it("should handle E notation in input base", () => {
-        // 0t12E2 -> (12 in base 3) * 3^2
+      it("should handle mixed E/_^ notation support (using _^ for non-decimal)", () => {
+        // 0t12_^2 -> (12 in base 3) * 3^2
         // 5 * 9 = 45
-        const result = Parser.parse("0t12E2");
+        // Note: Strict E-notation logic requires _^ for non-decimal bases
+        const result = Parser.parse("0t12_^2");
         expect(result).toBeInstanceOf(Integer);
         expect(result.value).toBe(45n);
       });
@@ -1114,9 +1115,9 @@ describe("BaseSystem", () => {
         expect(explicitResult.value).toBe(36900n);
       });
 
-      it("should handle negative exponents", () => {
-        // 0t12E-1
-        const explicitResult = Parser.parse("0t12E-1");
+      it("should handle negative exponents with _^", () => {
+        // 0t12_^-1
+        const explicitResult = Parser.parse("0t12_^-1");
         expect(explicitResult).toBeInstanceOf(Rational);
         // 5/3
         expect(explicitResult.numerator).toBe(5n);

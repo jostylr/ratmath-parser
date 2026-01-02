@@ -612,23 +612,22 @@ function parseBaseNotation(numberStr, baseSystem, options = {}) {
   let eNotationIndex = -1;
   let eNotationType = null;
 
-  // Check if base contains 'E' character - if so, use _^ notation
-  const baseContainsE =
-    baseSystem.characters.includes("E") || baseSystem.characters.includes("e");
 
-  if (baseContainsE) {
-    // Look for _^ notation
-    eNotationIndex = numberStr.indexOf("_^");
-    if (eNotationIndex !== -1) {
-      eNotationType = "_^";
-    }
+  // Check for _^ notation (Always supported)
+  const explicitSciIndex = numberStr.indexOf("_^");
+  if (explicitSciIndex !== -1) {
+    eNotationIndex = explicitSciIndex;
+    eNotationType = "_^";
   } else {
-    // Look for E notation (case insensitive)
-    const upperStr = numberStr.toUpperCase();
-    const eIndex = upperStr.indexOf("E");
-    if (eIndex !== -1) {
-      eNotationIndex = eIndex;
-      eNotationType = "E";
+    // Check for E notation (Only allowed in Base 10 per user request)
+    if (baseSystem.base === 10) {
+      // Look for E notation (case insensitive)
+      const upperStr = numberStr.toUpperCase();
+      const eIndex = upperStr.indexOf("E");
+      if (eIndex !== -1) {
+        eNotationIndex = eIndex;
+        eNotationType = "E";
+      }
     }
   }
 
@@ -2462,6 +2461,9 @@ export class Parser {
     } else if (expr[0] === "E") {
       spaceBeforeE = false;
       startIndex = 1;
+    } else if (expr.startsWith("_^")) {
+      spaceBeforeE = false;
+      startIndex = 2;
     } else {
       throw new Error("Expected E notation");
     }
@@ -2506,28 +2508,22 @@ export class Parser {
       throw new Error("Base-aware E notation requires inputBase option");
     }
 
-    // Determine notation type based on whether base contains E
-    const baseContainsE =
-      baseSystem.characters.includes("E") ||
-      baseSystem.characters.includes("e");
-
     let notationType;
     let startIndex;
 
-    if (baseContainsE) {
-      // Use _^ notation
-      if (!expr.startsWith("_^")) {
-        throw new Error("Expected _^ notation for bases containing E");
-      }
+    // Strict E notation and _^ handling
+    if (expr.startsWith("_^")) {
       notationType = "_^";
       startIndex = 2;
-    } else {
-      // Use E notation
-      if (!expr.startsWith("E") && !expr.startsWith("e")) {
-        throw new Error("Expected E notation");
-      }
+    } else if (baseSystem.base === 10 && (expr.startsWith("E") || expr.startsWith("e"))) {
       notationType = "E";
       startIndex = 1;
+    } else {
+      if (baseSystem.base === 10) {
+        throw new Error("Expected E or _^ notation");
+      } else {
+        throw new Error("Scientific notation in non-decimal bases requires _^ separator (e.g. 5_^2)");
+      }
     }
 
     // Extract exponent string
