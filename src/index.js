@@ -574,11 +574,32 @@ function parseRepeatingDecimalInterval(str) {
  * @returns {Integer|Rational|RationalInterval} The parsed value
  */
 function parseBaseNotation(numberStr, baseSystem, options = {}) {
+  // Check for deprecated bracket notation first and throw error
+  if (/\[[0-9a-zA-Z]+\]$/.test(numberStr)) {
+    throw new Error(
+      "Bracket base notation (Value[Base]) is no longer supported. Use prefix notation (0xValue, 0bValue) or the BASE command."
+    );
+  }
+
   // Handle negative numbers
   let isNegative = false;
   if (numberStr.startsWith("-")) {
     isNegative = true;
     numberStr = numberStr.substring(1);
+  }
+
+  // Check for prefix notation (0x, 0b, etc.)
+  // Regex: starts with 0 follow by a letter
+  const prefixMatch = numberStr.match(/^0([a-zA-Z])/);
+  if (prefixMatch) {
+    const prefix = prefixMatch[1];
+    const registeredBase = BaseSystem.getSystemForPrefix(prefix);
+
+    if (registeredBase) {
+      // Switch base system and strip prefix
+      baseSystem = registeredBase;
+      numberStr = numberStr.substring(2); // Skip '0' and prefix char (e.g. '0x')
+    }
   }
 
   // Check for base-aware E notation or _^ notation first
@@ -807,15 +828,19 @@ function parseBaseNotation(numberStr, baseSystem, options = {}) {
     const numeratorStr = parts[0].trim();
     const denominatorStr = parts[1].trim();
 
-    // Parse numerator and denominator in the specified base
-    const numeratorDecimal = baseSystem.toDecimal(numeratorStr);
-    const denominatorDecimal = baseSystem.toDecimal(denominatorStr);
+    // Parse numerator and denominator recursively to handle base inheritance and overrides
+    const numeratorResult = parseBaseNotation(numeratorStr, baseSystem, options);
+    const denominatorResult = parseBaseNotation(denominatorStr, baseSystem, options);
 
-    if (denominatorDecimal === 0n) {
+    // Convert to Rational for division
+    const numRat = numeratorResult instanceof Integer ? numeratorResult.toRational() : numeratorResult;
+    const denRat = denominatorResult instanceof Integer ? denominatorResult.toRational() : denominatorResult;
+
+    if (denRat.numerator === 0n) {
       throw new Error("Denominator cannot be zero");
     }
 
-    let result = new Rational(numeratorDecimal, denominatorDecimal);
+    let result = numRat.divide(denRat);
     if (isNegative) {
       result = result.negate();
     }
@@ -1870,43 +1895,12 @@ export class Parser {
 
     // Check for base notation first (like 101[2], FF[16], A[16]:F[16], etc.)
     if (expr.includes("[") && expr.includes("]")) {
-      // Look for base notation pattern at the start of expression
-      // This handles single values like 101[2], decimals like 10.1[2], fractions like 1/10[2],
-      // mixed numbers like 1..1/2[2], and intervals like A[16]:F[16]
-      // Use a more restrictive pattern that doesn't capture operators
+      // Check if it matches base notation pattern specifically
       const baseMatch = expr.match(/^([-\w./:^]+(?::[-\w./:^]+)?)\[(\d+)\]/);
       if (baseMatch) {
-        const [fullMatch, numberStr, baseStr] = baseMatch;
-        const baseNum = parseInt(baseStr, 10);
-
-        // Validate base is reasonable
-        if (baseNum < 2 || baseNum > 62) {
-          throw new Error(
-            `Base ${baseNum} is not supported. Base must be between 2 and 62.`,
-          );
-        }
-
-        try {
-          // Create base system for this base, checking custom bases first
-          let baseSystem;
-          if (options.customBases && options.customBases.has(baseNum)) {
-            baseSystem = options.customBases.get(baseNum);
-          } else {
-            baseSystem = BaseSystem.fromBase(baseNum);
-          }
-
-          // Parse the number string according to the base notation
-          const result = parseBaseNotation(numberStr, baseSystem, options);
-
-          return {
-            value: result,
-            remainingExpr: expr.substring(fullMatch.length),
-          };
-        } catch (error) {
-          throw new Error(
-            `Invalid base notation ${fullMatch}: ${error.message}`,
-          );
-        }
+        throw new Error(
+          "Bracket base notation (Value[Base]) is no longer supported. Use prefix notation (0xValue, 0bValue) or the BASE command."
+        );
       }
 
       // If not base notation, check for uncertainty notation
@@ -2847,7 +2841,8 @@ export class Parser {
       options.inputBase &&
       options.inputBase !== BaseSystem.DECIMAL &&
       !expr.includes("[") &&
-      !expr.includes("#")
+      !expr.includes("#") &&
+      !expr.trim().match(/^(-?)0[a-zA-Z]/)
     ) {
       // Try to parse the entire expression with input base first
       try {
@@ -3076,11 +3071,33 @@ export class Parser {
    * @private
    */
   static #parseRational(expr, options = {}) {
+    expr = expr.trim();
+    // Check for prefix notation at the start (e.g., 0x, 0b) and override input base
+    const prefixMatch = expr.match(/^(-?)0([a-zA-Z])/);
+    let isExplicitPrefix = false;
+
+    if (prefixMatch) {
+      const isNegative = prefixMatch[1] === "-";
+      const prefix = prefixMatch[2];
+      const registeredBase = BaseSystem.getSystemForPrefix(prefix);
+
+      if (registeredBase) {
+        // Create new options with the specific base
+        options = { ...options, inputBase: registeredBase };
+        isExplicitPrefix = true;
+
+        // Strip the prefix (keep negative sign if present)
+        // e.g. -0x10 -> -10, 0x10 -> 10
+        // prefixMatch[0] is "-0x" or "0x"
+        expr = (isNegative ? "-" : "") + expr.substring(prefixMatch[0].length);
+      }
+    }
+
     if (expr.length === 0) {
       throw new Error("Unexpected end of expression");
     }
 
-    // If inputBase is specified and this doesn't look like explicit base notation,
+    // If inputBase is specified and this doesn't look like explicit base notation (old bracket style),
     // try parsing with the input base first
     if (
       options.inputBase &&
@@ -3093,6 +3110,7 @@ export class Parser {
       let hasDecimalPoint = false;
       let hasMixedNumber = false;
       let hasFraction = false;
+      let validationBase = options.inputBase;
 
       // Handle negative sign
       if (expr[endIndex] === "-") {
@@ -3104,14 +3122,14 @@ export class Parser {
         const char = expr[endIndex];
 
         // Check if character is valid in base (with case normalization)
-        let isValidChar = options.inputBase.charMap.has(char);
+        let isValidChar = validationBase.charMap.has(char);
 
         // Handle case normalization for bases with letters
         if (!isValidChar) {
-          const baseUsesLowercase = options.inputBase.characters.some(
+          const baseUsesLowercase = validationBase.characters.some(
             (ch) => ch >= "a" && ch <= "z",
           );
-          const baseUsesUppercase = options.inputBase.characters.some(
+          const baseUsesUppercase = validationBase.characters.some(
             (ch) => ch >= "A" && ch <= "Z",
           );
 
@@ -3122,7 +3140,7 @@ export class Parser {
             char >= "A" &&
             char <= "Z"
           ) {
-            isValidChar = options.inputBase.charMap.has(char.toLowerCase());
+            isValidChar = validationBase.charMap.has(char.toLowerCase());
           }
           // If base uses only uppercase letters, accept lowercase input
           else if (
@@ -3131,7 +3149,7 @@ export class Parser {
             char >= "a" &&
             char <= "z"
           ) {
-            isValidChar = options.inputBase.charMap.has(char.toUpperCase());
+            isValidChar = validationBase.charMap.has(char.toUpperCase());
           }
         }
 
@@ -3152,28 +3170,78 @@ export class Parser {
           endIndex++;
         } else if (char === "/" && !hasFraction) {
           // Fraction
+          // Check for division operator ambiguity (e.g. 0xFF / (...))
+          // If next char is likely not part of the number/fraction, break.
+          // This handles space, '(', and other operators.
+          if (endIndex + 1 < expr.length) {
+            const nextChar = expr[endIndex + 1];
+            if (!validationBase.charMap.has(nextChar)) {
+              break;
+            }
+          }
+
           hasFraction = true;
           endIndex++;
-        } else if (
-          (char === "E" || char === "e") &&
-          !options.inputBase.characters.includes("E") &&
-          !options.inputBase.characters.includes("e")
-        ) {
-          // E notation in decimal (not part of base characters)
-          break;
+
+          // Check for prefix syntax in denominator (e.g. 1/0b10)
+          // If found, switch validation base for the denominator part
+          if (endIndex + 1 < expr.length) {
+            const potentialPrefix = expr.substring(endIndex, endIndex + 2); // '0' + char
+            const subPrefixMatch = potentialPrefix.match(/^0([a-zA-Z])/);
+            if (subPrefixMatch) {
+              const subBase = BaseSystem.getSystemForPrefix(subPrefixMatch[1]);
+              if (subBase) {
+                validationBase = subBase;
+                // Don't skip index, let the loop validate '0' and char against new base
+                // Actually, '0' is valid in almost all bases. 
+                // Prefix char (e.g. 'b') might NOT be valid in new base (Binary doesn't have 'b').
+                // So we must unconditionaly accept the prefix characters.
+                endIndex += 2;
+              }
+            }
+          }
+        } else if (char === "E" || char === "e") {
+          if (validationBase.characters.includes("E") || validationBase.characters.includes("e")) {
+            endIndex++;
+          } else if (isExplicitPrefix) {
+            // Treat E as separator for Explicit Base Notation (consume it)
+            endIndex++;
+            // If next char is sign, consume it too
+            if (endIndex < expr.length && (expr[endIndex] === "+" || expr[endIndex] === "-")) {
+              endIndex++;
+            }
+          } else {
+            // E notation in decimal (implicit)
+            break;
+          }
         } else if (
           char === "_" &&
           endIndex + 1 < expr.length &&
           expr[endIndex + 1] === "^"
         ) {
           // _^ notation
-          break;
+          if (isExplicitPrefix) {
+            endIndex += 2; // Consume _^
+            // If next char is sign, consume it too
+            if (endIndex < expr.length && (expr[endIndex] === "+" || expr[endIndex] === "-")) {
+              endIndex++;
+            }
+          } else {
+            break;
+          }
         } else {
           break;
         }
       }
 
       // If we found a valid number pattern and it looks like a valid base number, try parsing
+      // console.log(`loop finished. endIndex=${endIndex} exprLen=${expr.length} explicit=${isExplicitPrefix}`);
+
+      // If explicit prefix used but no valid digits found, throw Error immediately
+      if (isExplicitPrefix && endIndex <= (expr[0] === "-" ? 1 : 0)) {
+        throw new Error(`Invalid number format for ${options.inputBase.name}`);
+      }
+
       if (endIndex > (expr[0] === "-" ? 1 : 0)) {
         const numberStr = expr.substring(0, endIndex);
 
@@ -3184,56 +3252,62 @@ export class Parser {
 
         // Split on decimal point and slash, but handle empty parts correctly
         // For mixed numbers (12..101/211), we need special handling since ".." creates empty parts
+        // Split on decimal point and slash, but handle empty parts correctly
+        // For mixed numbers (12..101/211), we need special handling since ".." creates empty parts
         const parts = testStr.split(/[\.\/]/);
-        const isValidInBase = parts.every((part, index) => {
-          // Allow empty parts for decimal points (e.g., ".5" or "5.")
-          // and for mixed numbers (e.g., "12..101" becomes ["12", "", "101"])
-          if (part === "") {
-            return (
-              testStr.includes(".") &&
-              (index === 0 ||
-                index === parts.length - 1 ||
-                testStr.includes(".."))
+
+        let isValidInBase = true;
+        if (!isExplicitPrefix) {
+          isValidInBase = parts.every((part, index) => {
+            // Allow empty parts for decimal points (e.g., ".5" or "5.")
+            // and for mixed numbers (e.g., "12..101" becomes ["12", "", "101"])
+            if (part === "") {
+              return (
+                testStr.includes(".") &&
+                (index === 0 ||
+                  index === parts.length - 1 ||
+                  testStr.includes(".."))
+              );
+            }
+            // Check if all characters in this part are valid for the base
+            // Handle case normalization for bases with letters
+            const baseUsesLowercase = options.inputBase.characters.some(
+              (char) => char >= "a" && char <= "z",
             );
-          }
-          // Check if all characters in this part are valid for the base
-          // Handle case normalization for bases with letters
-          const baseUsesLowercase = options.inputBase.characters.some(
-            (char) => char >= "a" && char <= "z",
-          );
-          const baseUsesUppercase = options.inputBase.characters.some(
-            (char) => char >= "A" && char <= "Z",
-          );
+            const baseUsesUppercase = options.inputBase.characters.some(
+              (char) => char >= "A" && char <= "Z",
+            );
 
-          return part.split("").every((char) => {
-            // Check direct match first
-            if (options.inputBase.charMap.has(char)) {
-              return true;
-            }
+            return part.split("").every((char) => {
+              // Check direct match first
+              if (options.inputBase.charMap.has(char)) {
+                return true;
+              }
 
-            // If base uses only lowercase letters, check uppercase input
-            if (
-              baseUsesLowercase &&
-              !baseUsesUppercase &&
-              char >= "A" &&
-              char <= "Z"
-            ) {
-              return options.inputBase.charMap.has(char.toLowerCase());
-            }
+              // If base uses only lowercase letters, check uppercase input
+              if (
+                baseUsesLowercase &&
+                !baseUsesUppercase &&
+                char >= "A" &&
+                char <= "Z"
+              ) {
+                return options.inputBase.charMap.has(char.toLowerCase());
+              }
 
-            // If base uses only uppercase letters, check lowercase input
-            if (
-              baseUsesUppercase &&
-              !baseUsesLowercase &&
-              char >= "a" &&
-              char <= "z"
-            ) {
-              return options.inputBase.charMap.has(char.toUpperCase());
-            }
+              // If base uses only uppercase letters, check lowercase input
+              if (
+                baseUsesUppercase &&
+                !baseUsesLowercase &&
+                char >= "a" &&
+                char <= "z"
+              ) {
+                return options.inputBase.charMap.has(char.toUpperCase());
+              }
 
-            return false;
+              return false;
+            });
           });
-        });
+        }
 
         if (isValidInBase) {
           try {
@@ -3247,7 +3321,11 @@ export class Parser {
               remainingExpr: expr.substring(endIndex),
             };
           } catch (error) {
-            // If base parsing fails, fall through to decimal parsing
+            // If explicit base was used, rethrow the error (don't fallback)
+            if (isExplicitPrefix) {
+              throw error;
+            }
+            // If base parsing fails for implicit base, fall through to decimal parsing
           }
         }
       }
