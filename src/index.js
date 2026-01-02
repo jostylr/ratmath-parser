@@ -599,6 +599,12 @@ function parseBaseNotation(numberStr, baseSystem, options = {}) {
       // Switch base system and strip prefix
       baseSystem = registeredBase;
       numberStr = numberStr.substring(2); // Skip '0' and prefix char (e.g. '0x')
+    } else {
+      // If it looks like a prefix but isn't registered, throw error
+      // Exception: 'E' is special for scientific notation
+      if (prefix.toLowerCase() !== 'e') {
+        throw new Error(`Invalid or unregistered prefix '0${prefix}'`);
+      }
     }
   }
 
@@ -3087,9 +3093,13 @@ export class Parser {
         isExplicitPrefix = true;
 
         // Strip the prefix (keep negative sign if present)
-        // e.g. -0x10 -> -10, 0x10 -> 10
-        // prefixMatch[0] is "-0x" or "0x"
         expr = (isNegative ? "-" : "") + expr.substring(prefixMatch[0].length);
+      } else {
+        // Strictly require valid prefixes for 0[letter] notation
+        // Exception: 'E' is reserved for scientific notation unless registered as a prefix
+        if (prefix.toLowerCase() !== 'e') {
+          throw new Error(`Invalid or unregistered prefix '0${prefix}'`);
+        }
       }
     }
 
