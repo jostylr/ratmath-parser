@@ -176,9 +176,15 @@ describe("Repeating Decimal Intervals", () => {
       );
     });
 
+    it("should allow valid repeating offsets after decimal point", () => {
+      const result = parseRepeatingDecimal("0.[+#3]");
+      expect(result.low.toString()).toBe("0");
+      expect(result.high.toString()).toBe("1/3");
+    });
+
     it("throws error for invalid offset format", () => {
       expect(() => parseRepeatingDecimal("0.[+-abc]")).toThrow();
-      expect(() => parseRepeatingDecimal("0.[+#3]")).toThrow(
+      expect(() => parseRepeatingDecimal("0.[#3]")).toThrow(
         "Invalid uncertainty format for decimal point notation",
       );
     });

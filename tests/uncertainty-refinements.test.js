@@ -78,6 +78,31 @@ describe("Uncertainty Refinements", () => {
         });
     });
 
+    describe("Ensure that uncertainty notation works after the decimal point", () => {
+        it("simple hex absolute", () => {
+            const result = Parser.parse("1.[2:3]", { inputBase: BaseSystem.HEXADECIMAL });
+            expect(result.low.equals(new Rational(9n, 8n))).toBe(true);
+            expect(result.high.equals(new Rational(19n, 16n))).toBe(true);
+        });
+        it("simple hex relative", () => {
+            const result = Parser.parse("1.[+2:-3]", { inputBase: BaseSystem.HEXADECIMAL });
+            expect(result.low.equals(new Rational(13n, 16n))).toBe(true);
+            expect(result.high.equals(new Rational(9n, 8n))).toBe(true);
+        });
+        it("simple dec absolute", () => {
+            const result = Parser.parse("1.[2:3]");
+            expect(result.low.equals(new Rational(6n, 5n))).toBe(true);
+            expect(result.high.equals(new Rational(13n, 10n))).toBe(true);
+        });
+        it("simple dec relative", () => {
+            const result = Parser.parse("1.[+2:-3]");
+            expect(result.low.equals(new Rational(7n, 10n))).toBe(true);
+            expect(result.high.equals(new Rational(6n, 5n))).toBe(true);
+        });
+    });
+
+
+
     describe("reject E notation with uncertainty", () => {
         it("rejects E notation inside center value for digit appending", () => {
             // There should be a test for that and it is failing; it is under "rejects E notation inside center value"

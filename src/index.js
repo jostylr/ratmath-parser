@@ -73,10 +73,10 @@ function parseDecimalUncertainty(str, options = {}) {
   const afterDecimalMatch = baseStr.match(/^(-?[\w./:^]+\.)$/);
   if (
     afterDecimalMatch &&
-    !uncertaintyStr.startsWith("+-") &&
-    !uncertaintyStr.startsWith("-+")
+    !uncertaintyStr.includes("+") &&
+    !uncertaintyStr.includes("-")
   ) {
-    return finalize(parseDecimalPointUncertainty(baseStr, uncertaintyStr));
+    return finalize(parseDecimalPointUncertainty(baseStr, uncertaintyStr, inputBase, options));
   }
 
   // Parse the base value
@@ -154,16 +154,18 @@ function parseDecimalUncertainty(str, options = {}) {
       );
     }
 
+    const isRepeating = offsetStr.startsWith("#");
     const offset = parseRepeatingDecimalOrRegular(offsetStr, inputBase);
     const baseVal = BigInt(inputBase.base);
 
-    if (baseDecimalPlaces === 0) {
+    if (baseDecimalPlaces === 0 && !baseStr.includes(".")) {
       const upperBound = baseValue.add(offset);
       const lowerBound = baseValue.subtract(offset);
       result = new RationalInterval(lowerBound, upperBound);
     } else {
+      const scalePower = isRepeating ? baseDecimalPlaces : baseDecimalPlaces + 1;
       const nextPlaceScale = new Rational(1).divide(
-        new Rational(baseVal).pow(baseDecimalPlaces + 1),
+        new Rational(baseVal).pow(scalePower),
       );
       const scaledOffset = offset.multiply(nextPlaceScale);
       const upperBound = baseValue.add(scaledOffset);
@@ -209,15 +211,23 @@ function parseDecimalUncertainty(str, options = {}) {
     const baseVal = BigInt(inputBase.base);
 
     let upperBound, lowerBound;
-    if (baseDecimalPlaces === 0) {
+    if (baseDecimalPlaces === 0 && !baseStr.includes(".")) {
       upperBound = baseValue.add(positiveOffset);
       lowerBound = baseValue.subtract(negativeOffset);
     } else {
-      const nextPlaceScale = new Rational(1).divide(
-        new Rational(baseVal).pow(baseDecimalPlaces + 1),
-      );
-      const scaledPositiveOffset = positiveOffset.multiply(nextPlaceScale);
-      const scaledNegativeOffset = negativeOffset.multiply(nextPlaceScale);
+      const posPart = relativeParts.find(p => p.startsWith("+"));
+      const negPart = relativeParts.find(p => p.startsWith("-"));
+      const posIsRepeating = posPart && posPart.substring(1).startsWith("#");
+      const negIsRepeating = negPart && negPart.substring(1).startsWith("#");
+
+      const posScalePower = posIsRepeating ? baseDecimalPlaces : baseDecimalPlaces + 1;
+      const negScalePower = negIsRepeating ? baseDecimalPlaces : baseDecimalPlaces + 1;
+
+      const posScale = new Rational(1).divide(new Rational(baseVal).pow(posScalePower));
+      const negScale = new Rational(1).divide(new Rational(baseVal).pow(negScalePower));
+
+      const scaledPositiveOffset = positiveOffset.multiply(posScale);
+      const scaledNegativeOffset = negativeOffset.multiply(negScale);
       upperBound = baseValue.add(scaledPositiveOffset);
       lowerBound = baseValue.subtract(scaledNegativeOffset);
     }
@@ -228,7 +238,7 @@ function parseDecimalUncertainty(str, options = {}) {
   return finalize(result);
 }
 
-function parseDecimalPointUncertainty(baseStr, uncertaintyStr) {
+function parseDecimalPointUncertainty(baseStr, uncertaintyStr, baseSystem = BaseSystem.DECIMAL, options = {}) {
   // Handle range notation right after decimal point
   // baseStr is like "0." or "-1."
 
@@ -245,8 +255,8 @@ function parseDecimalPointUncertainty(baseStr, uncertaintyStr) {
     const upperStr = rangeParts[1].trim();
 
     // Parse each endpoint, handling repeating decimals
-    const lowerBound = parseDecimalPointEndpoint(baseStr, lowerStr);
-    const upperBound = parseDecimalPointEndpoint(baseStr, upperStr);
+    const lowerBound = parseDecimalPointEndpoint(baseStr, lowerStr, baseSystem, options);
+    const upperBound = parseDecimalPointEndpoint(baseStr, upperStr, baseSystem, options);
 
     return new RationalInterval(lowerBound, upperBound);
   } else {
@@ -254,20 +264,24 @@ function parseDecimalPointUncertainty(baseStr, uncertaintyStr) {
   }
 }
 
-function parseDecimalPointEndpoint(baseStr, endpointStr) {
+function parseDecimalPointEndpoint(baseStr, endpointStr, baseSystem = BaseSystem.DECIMAL, options = {}) {
   // baseStr is like "0." or "-1."
   // endpointStr is like "#3", "1", "4", etc.
 
   if (endpointStr.startsWith("#")) {
     // Repeating decimal: combine base with repeating part
+    // Note: Repeating decimals with # are currently only supported in Base 10
     const fullStr = baseStr + endpointStr;
     return parseRepeatingDecimal(fullStr);
-  } else if (/^\d+$/.test(endpointStr)) {
+  } else {
     // Simple digits: append to base
     const fullStr = baseStr + endpointStr;
-    return new Rational(fullStr);
-  } else {
-    throw new Error(`Invalid endpoint format: ${endpointStr}`);
+    try {
+      const result = parseBaseNotation(fullStr, baseSystem, { ...options, typeAware: true });
+      return result instanceof Integer ? result.toRational() : result;
+    } catch (e) {
+      throw new Error(`Invalid endpoint format: ${endpointStr}`);
+    }
   }
 }
 
@@ -841,9 +855,7 @@ function parseBaseNotation(numberStr, baseSystem, options = {}) {
     const integerPart = parts[0] || "0";
     const fractionalPart = parts[1] || "";
 
-    if (fractionalPart === "") {
-      throw new Error("Decimal point must be followed by fractional digits");
-    }
+    // Allow trailing dot as shorthand for .0 (useful in uncertainty notation)
 
     // Validate all characters are valid for this base
     const fullStr = integerPart + fractionalPart;
