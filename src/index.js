@@ -594,15 +594,19 @@ function parseBaseNotation(numberStr, baseSystem, options = {}) {
   if (prefixMatch) {
     const prefix = prefixMatch[1];
     const registeredBase = BaseSystem.getSystemForPrefix(prefix);
+    // console.log(`DEBUG: prefix='${prefix}', registeredBase=${!!registeredBase}`);
 
     if (registeredBase) {
       // Switch base system and strip prefix
       baseSystem = registeredBase;
       numberStr = numberStr.substring(2); // Skip '0' and prefix char (e.g. '0x')
+    } else if (prefix === "D") {
+      // Special prefix for "default input base" - keep current baseSystem
+      numberStr = numberStr.substring(2);
     } else {
       // If it looks like a prefix but isn't registered, throw error
       // Exception: 'E' is special for scientific notation
-      if (prefix.toLowerCase() !== 'e') {
+      if (prefix.toLowerCase() !== "e") {
         throw new Error(`Invalid or unregistered prefix '0${prefix}'`);
       }
     }
@@ -3093,10 +3097,14 @@ export class Parser {
 
         // Strip the prefix (keep negative sign if present)
         expr = (isNegative ? "-" : "") + expr.substring(prefixMatch[0].length);
+      } else if (prefix === "D") {
+        // Special prefix for "default input base" - remove prefix but keep base as is
+        isExplicitPrefix = true;
+        expr = (isNegative ? "-" : "") + expr.substring(prefixMatch[0].length);
       } else {
         // Strictly require valid prefixes for 0[letter] notation
         // Exception: 'E' is reserved for scientific notation unless registered as a prefix
-        if (prefix.toLowerCase() !== 'e') {
+        if (prefix.toLowerCase() !== "e") {
           throw new Error(`Invalid or unregistered prefix '0${prefix}'`);
         }
       }
@@ -3199,9 +3207,10 @@ export class Parser {
             const potentialPrefix = expr.substring(endIndex, endIndex + 2); // '0' + char
             const subPrefixMatch = potentialPrefix.match(/^0([a-zA-Z])/);
             if (subPrefixMatch) {
-              const subBase = BaseSystem.getSystemForPrefix(subPrefixMatch[1]);
-              if (subBase) {
-                validationBase = subBase;
+              const prefixChar = subPrefixMatch[1];
+              const subBase = BaseSystem.getSystemForPrefix(prefixChar);
+              if (subBase || prefixChar === "D") {
+                if (subBase) validationBase = subBase;
                 // Don't skip index, let the loop validate '0' and char against new base
                 // Actually, '0' is valid in almost all bases. 
                 // Prefix char (e.g. 'b') might NOT be valid in new base (Binary doesn't have 'b').
