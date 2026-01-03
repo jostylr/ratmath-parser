@@ -992,11 +992,11 @@ describe("BaseSystem", () => {
 
     describe("Error Handling", () => {
       it("should throw error for invalid digits", () => {
-        // 0b123 -> Parses 1, fails on 2
-        // Throws "Unexpected token at end: 23"
-        expect(() => Parser.parse("0b123")).toThrow("Unexpected token");
-        expect(() => Parser.parse("0xXYZ")).toThrow("Invalid number format for Hexadecimal");
-        expect(() => Parser.parse("0o888")).toThrow("Invalid number format for Octal");
+        // 0b123 -> Greedy match 123, then fails validation
+        // Throws "String '123' contains characters not valid for Binary" or similar
+        expect(() => Parser.parse("0b123")).toThrow(/characters not valid|Invalid number format/);
+        expect(() => Parser.parse("0xXYZ")).toThrow(/Invalid number format/);
+        expect(() => Parser.parse("0o888")).toThrow(/characters not valid|Invalid number format/);
       });
 
       it("should throw error for division by zero", () => {

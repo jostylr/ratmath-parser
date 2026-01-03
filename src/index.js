@@ -2690,7 +2690,8 @@ export class Parser {
       expr.includes(".") &&
       !expr.includes("#") &&
       !expr.includes(":") &&
-      !expr.includes("[")
+      !expr.includes("[") &&
+      (!options.inputBase || options.inputBase === BaseSystem.DECIMAL)
     ) {
       // Find the end of the decimal number
       let endIndex = 0;
@@ -2859,6 +2860,9 @@ export class Parser {
 
           if (options.inputBase.charMap.has(char)) {
             endIndex++;
+          } else if (/[0-9]/.test(char)) {
+            // Greedy digit consumption
+            endIndex++;
           } else if (
             char === "." &&
             endIndex + 1 < expr.length &&
@@ -2923,6 +2927,13 @@ export class Parser {
               value: result,
               remainingExpr: expr.substring(endIndex),
             };
+          } else if (options.inputBase && options.inputBase !== BaseSystem.DECIMAL) {
+            throw new Error(`Invalid number format for ${options.inputBase.name}`);
+          }
+        } else if (options.inputBase && options.inputBase !== BaseSystem.DECIMAL) {
+          const firstChar = expr.startsWith("-") ? expr[1] : expr[0];
+          if (/[0-9]/.test(firstChar)) {
+            throw new Error(`Invalid number format for ${options.inputBase.name}`);
           }
         }
       } catch (error) {
@@ -3223,6 +3234,10 @@ export class Parser {
             endIndex++;
           }
           // Continue to consume exponent digits loop
+        } else if (/[0-9]/.test(char)) {
+          // Consume any digit 0-9 even if not in base to avoid partial matches
+          // Validation will catch this later
+          endIndex++;
         } else {
           // Invalid character for this base
           break;
@@ -3322,6 +3337,16 @@ export class Parser {
             }
             // If base parsing fails for implicit base, fall through to decimal parsing
           }
+        } else if (options.inputBase && options.inputBase !== BaseSystem.DECIMAL) {
+          // If we consumed a number-like sequence that is invalid for the input base, 
+          // throw an error instead of falling through to decimal
+          throw new Error(`Invalid number format for ${options.inputBase.name}`);
+        }
+      } else if (options.inputBase && options.inputBase !== BaseSystem.DECIMAL) {
+        // Handle case where we didn't consume anything but it looks like a number start (digit)
+        const firstChar = expr.startsWith("-") ? expr[1] : expr[0];
+        if (/[0-9]/.test(firstChar)) {
+          throw new Error(`Invalid number format for ${options.inputBase.name}`);
         }
       }
     }
