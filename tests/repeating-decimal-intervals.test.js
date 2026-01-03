@@ -160,9 +160,6 @@ describe("Repeating Decimal Intervals", () => {
       expect(() => parseRepeatingDecimal("1[2,3]")).toThrow();
     });
 
-    it("throws error for old colon notation in brackets", () => {
-      expect(() => parseRepeatingDecimal("0.[#3:#6]")).toThrow();
-    });
 
     it("throws error for invalid endpoint format", () => {
       expect(() => parseRepeatingDecimal("0.[#3,abc]")).toThrow(
@@ -188,10 +185,10 @@ describe("Repeating Decimal Intervals", () => {
 
     it("throws error for empty endpoints", () => {
       expect(() => parseRepeatingDecimal("0.[,#3]")).toThrow(
-        "Invalid endpoint format: ",
+        "Range notation must have exactly two values separated by colon or comma",
       );
       expect(() => parseRepeatingDecimal("0.[#3,]")).toThrow(
-        "Invalid endpoint format: ",
+        "Range notation must have exactly two values separated by colon or comma",
       );
     });
 

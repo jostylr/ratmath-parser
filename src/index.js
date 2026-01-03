@@ -46,108 +46,107 @@ const DEFAULT_PRECISION = -6; // 10^-6
  * @returns {RationalInterval} The interval representation
  * @throws {Error} If the string format is invalid
  */
-function parseDecimalUncertainty(str, allowIntegerRangeNotation = true) {
-  const uncertaintyMatch = str.match(/^(-?\d*\.?\d*)\[([^\]]+)\]$/);
+function parseDecimalUncertainty(str, options = {}) {
+  const allowIntegerRangeNotation = options.allowIntegerRangeNotation !== false;
+  const inputBase = options.inputBase || BaseSystem.DECIMAL;
+
+  const uncertaintyMatch = str.match(/^(-?[@\w./:^]+)\[([^\]]+)\]((?:[Ee][+-]?[\w]+|\_?\^-?[\w]+)?)$/);
   if (!uncertaintyMatch) {
     throw new Error("Invalid uncertainty format");
   }
 
   const baseStr = uncertaintyMatch[1];
   const uncertaintyStr = uncertaintyMatch[2];
+  const trailingPart = uncertaintyMatch[3];
+
+  // Helper to apply trailing scientific notation
+  const finalize = (interval) => {
+    if (trailingPart) {
+      const multiplier = parseRepeatingDecimalOrRegular("1" + trailingPart, inputBase);
+      return interval.multiply(multiplier);
+    }
+    return interval;
+  };
 
   // Check if this is a range interval right after decimal point
-  // Format: 0.[#3,#6] or 1.[1,4] (only when base ends with decimal point and no digits after)
-  const afterDecimalMatch = baseStr.match(/^(-?\d+\.)$/);
+  // Format: 0.[#3,#6] or 1.[1:4] (only when base ends with decimal point and no digits after)
+  const afterDecimalMatch = baseStr.match(/^(-?[\w./:^]+\.)$/);
   if (
     afterDecimalMatch &&
     !uncertaintyStr.startsWith("+-") &&
     !uncertaintyStr.startsWith("-+")
   ) {
-    return parseDecimalPointUncertainty(baseStr, uncertaintyStr);
+    return finalize(parseDecimalPointUncertainty(baseStr, uncertaintyStr));
   }
 
-  // Parse the base decimal
-  const baseRational = new Rational(baseStr);
+  // Parse the base value
+  const baseValue = parseBaseNotation(baseStr, inputBase, { ...options, typeAware: true });
 
   // Determine decimal places in base for proper alignment
-  const decimalMatch = baseStr.match(/\.(\d+)$/);
+  const decimalMatch = baseStr.match(/\.([\w^/_]+)$/);
   const baseDecimalPlaces = decimalMatch ? decimalMatch[1].length : 0;
 
-  // Check if it's range notation [num,num], relative notation [+num,-num], or symmetric notation [+-num]
+  let result;
+
+  // Check if it's range notation [num:num], relative notation [+num:-num], or symmetric notation [+-num]
   if (
-    uncertaintyStr.includes(",") &&
+    (uncertaintyStr.includes(",") || uncertaintyStr.includes(":")) &&
     !uncertaintyStr.includes("+") &&
     !uncertaintyStr.includes("-")
   ) {
-    // Range notation: 1.23[56,67] → 1.2356:1.2367 or 42[15,25] → 4215:4225
-    // But only allow for integer bases if allowIntegerRangeNotation is true
+    // Range notation: 1.23[56:67] → 1.2356:1.2367
     if (baseDecimalPlaces === 0 && !allowIntegerRangeNotation) {
       throw new Error(
         "Range notation on integer bases is not supported in this context",
       );
     }
 
-    const rangeParts = uncertaintyStr.split(",");
+    const rangeParts = uncertaintyStr.split(/[: ,]+/).filter((s) => s.length > 0);
     if (rangeParts.length !== 2) {
       throw new Error(
-        "Range notation must have exactly two values separated by comma",
+        "Range notation must have exactly two values separated by colon or comma",
       );
     }
 
     const lowerUncertainty = rangeParts[0].trim();
     const upperUncertainty = rangeParts[1].trim();
 
-    // Validate that both are valid decimal numbers (digits and optional decimal point)
-    if (
-      !/^\d+(\.\d+)?$/.test(lowerUncertainty) ||
-      !/^\d+(\.\d+)?$/.test(upperUncertainty)
-    ) {
-      throw new Error("Range values must be valid decimal numbers");
+    // Reject E notation in the base string if it's confusing (scientific notation)
+    const hasConfusingENotation = (inputBase.base === 10 && (baseStr.includes("E") || baseStr.includes("e"))) || baseStr.includes("_^");
+    if (hasConfusingENotation) {
+      throw new Error("Uncertainty notation cannot be used with scientific notation in the base value");
     }
 
-    // Create the bounds by appending the uncertainty digits
+    const isValidForBase = (s) => {
+      if (inputBase.isValidString(s.replace(".", ""))) return true;
+      if (inputBase.base <= 36) {
+        return inputBase.isValidString(s.replace(".", "").toLowerCase());
+      }
+      return false;
+    };
+
+    if (!isValidForBase(lowerUncertainty) || !isValidForBase(upperUncertainty)) {
+      throw new Error(`Range values must be valid for base ${inputBase.base}`);
+    }
+
     const lowerBoundStr = baseStr + lowerUncertainty;
     const upperBoundStr = baseStr + upperUncertainty;
 
-    // For integer bases, validate that range values have the same number of digits
-    if (baseDecimalPlaces === 0) {
-      // Check if both range values are pure integers (no decimal points)
-      const lowerIsInteger = !lowerUncertainty.includes(".");
-      const upperIsInteger = !upperUncertainty.includes(".");
+    const lowerBoundResult = parseBaseNotation(lowerBoundStr, inputBase, { ...options, typeAware: true });
+    const upperBoundResult = parseBaseNotation(upperBoundStr, inputBase, { ...options, typeAware: true });
 
-      // Extract integer parts from range values (whether they're pure integers or have decimals)
-      const lowerIntPart = lowerUncertainty.includes(".")
-        ? lowerUncertainty.split(".")[0]
-        : lowerUncertainty;
-      const upperIntPart = upperUncertainty.includes(".")
-        ? upperUncertainty.split(".")[0]
-        : upperUncertainty;
+    let lowerBound = lowerBoundResult instanceof Integer ? lowerBoundResult.toRational() : lowerBoundResult;
+    let upperBound = upperBoundResult instanceof Integer ? upperBoundResult.toRational() : upperBoundResult;
 
-      // Check that both integer parts have the same number of digits
-      const lowerIntDigits = lowerIntPart.length;
-      const upperIntDigits = upperIntPart.length;
+    result = lowerBound.greaterThan(upperBound)
+      ? new RationalInterval(upperBound, lowerBound)
+      : new RationalInterval(lowerBound, upperBound);
 
-      if (lowerIntDigits !== upperIntDigits) {
-        throw new Error(
-          `Invalid range notation: ${baseStr}[${lowerUncertainty},${upperUncertainty}] - integer parts of range values must have the same number of digits (${lowerIntPart} has ${lowerIntDigits}, ${upperIntPart} has ${upperIntDigits})`,
-        );
-      }
-    }
-
-    const lowerBound = new Rational(lowerBoundStr);
-    const upperBound = new Rational(upperBoundStr);
-
-    // Automatically order the bounds (allow either order in input)
-    if (lowerBound.greaterThan(upperBound)) {
-      return new RationalInterval(upperBound, lowerBound);
-    }
-
-    return new RationalInterval(lowerBound, upperBound);
   } else if (
     uncertaintyStr.startsWith("+-") ||
     uncertaintyStr.startsWith("-+")
   ) {
-    // Symmetric notation: 1.23[+-5] or 1.23[-+5] or 12[+-0.#3]
+    // Symmetric notation: 1.23[+-5]
     const offsetStr = uncertaintyStr.substring(2);
     if (!offsetStr) {
       throw new Error(
@@ -155,32 +154,34 @@ function parseDecimalUncertainty(str, allowIntegerRangeNotation = true) {
       );
     }
 
-    const offset = parseRepeatingDecimalOrRegular(offsetStr);
+    const offset = parseRepeatingDecimalOrRegular(offsetStr, inputBase);
+    const baseVal = BigInt(inputBase.base);
 
-    // For integer bases, apply offset directly
-    // For decimal bases, scale to the next decimal place
     if (baseDecimalPlaces === 0) {
-      // Integer base: apply offset directly in ones place
-      const upperBound = baseRational.add(offset);
-      const lowerBound = baseRational.subtract(offset);
-      return new RationalInterval(lowerBound, upperBound);
+      const upperBound = baseValue.add(offset);
+      const lowerBound = baseValue.subtract(offset);
+      result = new RationalInterval(lowerBound, upperBound);
     } else {
-      // Decimal base: scale to next decimal place
       const nextPlaceScale = new Rational(1).divide(
-        new Rational(10).pow(baseDecimalPlaces + 1),
+        new Rational(baseVal).pow(baseDecimalPlaces + 1),
       );
       const scaledOffset = offset.multiply(nextPlaceScale);
-      const upperBound = baseRational.add(scaledOffset);
-      const lowerBound = baseRational.subtract(scaledOffset);
-      return new RationalInterval(lowerBound, upperBound);
+      const upperBound = baseValue.add(scaledOffset);
+      const lowerBound = baseValue.subtract(scaledOffset);
+      result = new RationalInterval(lowerBound, upperBound);
     }
   } else {
-    // Relative notation: 1.23[+5,-6] or 1.23[-6,+5]
-    const relativeParts = uncertaintyStr.split(",").map((s) => s.trim());
-    if (relativeParts.length !== 2) {
+    // Relative notation: 1.23[+5,-6]
+    const relativeParts = uncertaintyStr.split(/[: ,]+/).filter(s => s.length > 0).map((s) => s.trim());
+    if (relativeParts.length > 2 || relativeParts.length === 0) {
       throw new Error(
-        "Relative notation must have exactly two values separated by comma",
+        "Relative notation must have one or two values separated by colon or comma",
       );
+    }
+
+    const hasConfusingENotation = (inputBase.base === 10 && (baseStr.includes("E") || baseStr.includes("e"))) || baseStr.includes("_^");
+    if (hasConfusingENotation) {
+      throw new Error("Uncertainty notation cannot be used with scientific notation in the base value");
     }
 
     let positiveOffset = null;
@@ -188,67 +189,55 @@ function parseDecimalUncertainty(str, allowIntegerRangeNotation = true) {
 
     for (const part of relativeParts) {
       if (part.startsWith("+")) {
-        if (positiveOffset !== null) {
-          throw new Error("Only one positive offset allowed");
-        }
+        if (positiveOffset !== null) throw new Error("Only one positive offset allowed");
         const offsetStr = part.substring(1);
-        if (!offsetStr) {
-          throw new Error("Offset must be a valid number");
-        }
-        positiveOffset = parseRepeatingDecimalOrRegular(offsetStr);
+        if (!offsetStr) throw new Error("Offset must be a valid number");
+        positiveOffset = parseRepeatingDecimalOrRegular(offsetStr, inputBase);
       } else if (part.startsWith("-")) {
-        if (negativeOffset !== null) {
-          throw new Error("Only one negative offset allowed");
-        }
+        if (negativeOffset !== null) throw new Error("Only one negative offset allowed");
         const offsetStr = part.substring(1);
-        if (!offsetStr) {
-          throw new Error("Offset must be a valid number");
-        }
-        negativeOffset = parseRepeatingDecimalOrRegular(offsetStr);
+        if (!offsetStr) throw new Error("Offset must be a valid number");
+        negativeOffset = parseRepeatingDecimalOrRegular(offsetStr, inputBase);
       } else {
         throw new Error("Relative notation values must start with + or -");
       }
     }
 
-    if (positiveOffset === null || negativeOffset === null) {
-      throw new Error(
-        "Relative notation must have exactly one + and one - value",
-      );
-    }
+    if (positiveOffset === null) positiveOffset = new Integer(0);
+    if (negativeOffset === null) negativeOffset = new Integer(0);
 
-    // For integer bases, apply offsets directly
-    // For decimal bases, scale to the next decimal place
+    const baseVal = BigInt(inputBase.base);
+
     let upperBound, lowerBound;
-
     if (baseDecimalPlaces === 0) {
-      // Integer base: apply offsets directly in ones place
-      upperBound = baseRational.add(positiveOffset);
-      lowerBound = baseRational.subtract(negativeOffset);
+      upperBound = baseValue.add(positiveOffset);
+      lowerBound = baseValue.subtract(negativeOffset);
     } else {
-      // Decimal base: scale to next decimal place
       const nextPlaceScale = new Rational(1).divide(
-        new Rational(10).pow(baseDecimalPlaces + 1),
+        new Rational(baseVal).pow(baseDecimalPlaces + 1),
       );
       const scaledPositiveOffset = positiveOffset.multiply(nextPlaceScale);
       const scaledNegativeOffset = negativeOffset.multiply(nextPlaceScale);
-      upperBound = baseRational.add(scaledPositiveOffset);
-      lowerBound = baseRational.subtract(scaledNegativeOffset);
+      upperBound = baseValue.add(scaledPositiveOffset);
+      lowerBound = baseValue.subtract(scaledNegativeOffset);
     }
 
-    return new RationalInterval(lowerBound, upperBound);
+    result = new RationalInterval(lowerBound, upperBound);
   }
+
+  return finalize(result);
 }
 
 function parseDecimalPointUncertainty(baseStr, uncertaintyStr) {
   // Handle range notation right after decimal point
   // baseStr is like "0." or "-1."
 
-  if (uncertaintyStr.includes(",")) {
-    // Range notation: 0.[#3,#6] or 0.[1,4]
-    const rangeParts = uncertaintyStr.split(",");
+  if (uncertaintyStr.includes(",") || uncertaintyStr.includes(":")) {
+    // Range notation: 0.[#3:#6] or 0.[1:4]
+    const rangeParts = uncertaintyStr.split(/[: ,]+/).filter(s => s.length > 0);
     if (rangeParts.length !== 2) {
       throw new Error(
-        "Range notation must have exactly two values separated by comma",
+        "Range notation must have exactly two values separated by colon or comma",
       );
     }
 
@@ -282,71 +271,56 @@ function parseDecimalPointEndpoint(baseStr, endpointStr) {
   }
 }
 
-function parseRepeatingDecimalOrRegular(str) {
-  // Parse a string that might be a repeating decimal, regular decimal, or E notation
+function parseRepeatingDecimalOrRegular(str, baseSystem = BaseSystem.DECIMAL) {
+  // Parse a string that might be a repeating decimal, regular decimal, or E/_^ notation
   if (str.includes("#")) {
-    // Check if it has E notation after the repeating decimal
-    const eIndex = str.indexOf("E");
-    if (eIndex !== -1) {
-      const repeatingPart = str.substring(0, eIndex);
-      const exponentPart = str.substring(eIndex + 1);
+    // Check for E notation or _^ notation after the repeating decimal
+    let eNotationIndex = -1;
+    let eNotationType = null;
 
-      // Validate exponent is an integer
-      if (!/^-?\d+$/.test(exponentPart)) {
-        throw new Error("E notation exponent must be an integer");
+    const explicitSciIndex = str.indexOf("_^");
+    if (explicitSciIndex !== -1) {
+      eNotationIndex = explicitSciIndex;
+      eNotationType = "_^";
+    } else if (baseSystem.base === 10) {
+      const eIndex = str.toUpperCase().indexOf("E");
+      if (eIndex !== -1) {
+        eNotationIndex = eIndex;
+        eNotationType = "E";
+      }
+    }
+
+    if (eNotationIndex !== -1) {
+      const repeatingPart = str.substring(0, eNotationIndex);
+      const exponentPart = str.substring(eNotationIndex + (eNotationType === "_^" ? 2 : 1));
+
+      // Validate exponent is a valid integer in current base
+      const absExponentPart = exponentPart.startsWith("-") ? exponentPart.substring(1) : exponentPart;
+      if (!baseSystem.isValidString(absExponentPart)) {
+        throw new Error(`${eNotationType} notation exponent must be a valid integer in base ${baseSystem.base}`);
       }
 
       const baseValue = parseRepeatingDecimal(repeatingPart);
-      const exponent = BigInt(exponentPart);
+      const exponent = baseSystem.toDecimal(exponentPart);
 
-      // Apply E notation: multiply by 10^exponent
-      let powerOf10;
+      // Apply notation: multiply by scaleBase^exponent
+      // E always uses base 10, _^ uses the current base system
+      const scaleBaseNum = eNotationType === "E" ? 10 : baseSystem.base;
+      const scaleBaseRatio = new Rational(BigInt(scaleBaseNum));
+      let scale;
       if (exponent >= 0n) {
-        powerOf10 = new Rational(10n ** exponent);
+        scale = scaleBaseRatio.pow(exponent);
       } else {
-        powerOf10 = new Rational(1n, 10n ** -exponent);
+        scale = new Rational(1).divide(scaleBaseRatio.pow(-exponent));
       }
 
-      return baseValue.multiply(powerOf10);
+      return baseValue.multiply(scale);
     } else {
       return parseRepeatingDecimal(str);
     }
-  } else if (str.includes("E")) {
-    // Handle E notation with regular decimal
-    const eIndex = str.indexOf("E");
-    const basePart = str.substring(0, eIndex);
-    const exponentPart = str.substring(eIndex + 1);
-
-    // Validate base is a valid number format
-    if (!/^-?(\d+\.?\d*|\.\d+)$/.test(basePart)) {
-      throw new Error("Invalid number format before E notation");
-    }
-
-    // Validate exponent is an integer
-    if (!/^-?\d+$/.test(exponentPart)) {
-      throw new Error("E notation exponent must be an integer");
-    }
-
-    const baseValue = new Rational(basePart);
-    const exponent = BigInt(exponentPart);
-
-    // Apply E notation: multiply by 10^exponent
-    let powerOf10;
-    if (exponent >= 0n) {
-      powerOf10 = new Rational(10n ** exponent);
-    } else {
-      powerOf10 = new Rational(1n, 10n ** -exponent);
-    }
-
-    return baseValue.multiply(powerOf10);
   } else {
-    // Validate that str is a valid number format before creating Rational
-    if (!/^-?(\d+\.?\d*|\.\d+)$/.test(str)) {
-      throw new Error(
-        "Symmetric notation must have a valid number after +- or -+",
-      );
-    }
-    return new Rational(str);
+    // Regular decimal or E/_^ notation (handled by parseBaseNotation)
+    return parseBaseNotation(str, baseSystem);
   }
 }
 
@@ -366,7 +340,7 @@ export function parseRepeatingDecimal(str) {
 
   // Check if this is uncertainty notation (contains brackets)
   if (str.includes("[") && str.includes("]")) {
-    return parseDecimalUncertainty(str, false); // Don't allow integer range notation in parseRepeatingDecimal
+    return parseDecimalUncertainty(str, { allowIntegerRangeNotation: false }); // Don't allow integer range notation in parseRepeatingDecimal
   }
 
   // Check if this is an interval notation (contains colon)
@@ -1913,11 +1887,11 @@ export class Parser {
       }
 
       // If not base notation, check for uncertainty notation
-      const uncertaintyMatch = expr.match(/^(-?\d*\.?\d*)\[([^\]]+)\]/);
+      const uncertaintyMatch = expr.match(/^(-?[@\w./:^]+)\[([^\]]+)\]((?:[Ee][+-]?[\w]+|\_?\^-?[\w]+)?)/);
       if (uncertaintyMatch) {
         const fullMatch = uncertaintyMatch[0];
         try {
-          const result = parseDecimalUncertainty(fullMatch, true); // Allow integer range notation in Parser
+          const result = parseDecimalUncertainty(fullMatch, options); // Allow integer range notation in Parser
           return {
             value: result,
             remainingExpr: expr.substring(fullMatch.length),
@@ -2618,10 +2592,10 @@ export class Parser {
     if (
       expr.includes("[") &&
       expr.includes("]") &&
-      /^-?\d*\.?\d*\[/.test(expr)
+      /^-?[@\w./:^]+\[/.test(expr)
     ) {
       try {
-        const result = parseDecimalUncertainty(expr);
+        const result = parseDecimalUncertainty(expr, options);
         return {
           value: result,
           remainingExpr: "",
@@ -2894,11 +2868,12 @@ export class Parser {
           } else if (
             char === ":" &&
             !hasColon &&
-            !hasMixedNumber &&
-            !hasDecimalPoint
+            !hasMixedNumber
           ) {
             // Interval notation
             hasColon = true;
+            hasDecimalPoint = false;
+            hasFraction = false;
             endIndex++;
           } else {
             break;

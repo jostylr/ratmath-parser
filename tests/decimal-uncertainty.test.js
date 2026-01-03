@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "bun:test";
 import { Parser } from "../src/index.js";
-import { Rational, RationalInterval } from "@ratmath/core";
+import { Rational, RationalInterval, BaseSystem } from "@ratmath/core";
 
 describe("Decimal Uncertainty Parsing", () => {
   describe("range notation", () => {
@@ -31,6 +31,12 @@ describe("Decimal Uncertainty Parsing", () => {
       expect(result.low.equals(new Rational("4215"))).toBe(true);
       expect(result.high.equals(new Rational("4225"))).toBe(true);
     });
+
+    it("supports colon as separator 1.23[56:67]", () => {
+      const result = Parser.parse("1.23[56:67]");
+      expect(result.low.equals(new Rational("1.2356"))).toBe(true);
+      expect(result.high.equals(new Rational("1.2367"))).toBe(true);
+    });
   });
 
   describe("relative notation", () => {
@@ -56,6 +62,12 @@ describe("Decimal Uncertainty Parsing", () => {
       // 78.3 + 0.15 = 78.45, 78.3 - 0.006 = 78.294
       expect(result.low.equals(new Rational("78.294"))).toBe(true);
       expect(result.high.equals(new Rational("78.45"))).toBe(true);
+    });
+
+    it("supports colon as separator in relative notation 1.23[+5:-6]", () => {
+      const result = Parser.parse("1.23[+5:-6]");
+      expect(result.low.equals(new Rational("1.224"))).toBe(true);
+      expect(result.high.equals(new Rational("1.235"))).toBe(true);
     });
 
     it("handles decimal offsets", () => {
@@ -147,11 +159,16 @@ describe("Decimal Uncertainty Parsing", () => {
       expect(() => Parser.parse("1.23[56,67,89]")).toThrow();
     });
 
-    it("throws error for invalid relative format", () => {
-      expect(() => Parser.parse("1.23[+5]")).toThrow();
+    it("handles single-value relative notation", () => {
+      const result = Parser.parse("1.23[+5]");
+      // [+5, 0] -> 1.235, 1.23
+      expect(result.low.equals(new Rational("1.23"))).toBe(true);
+      expect(result.high.equals(new Rational("1.235"))).toBe(true);
+    });
+
+    it("throws error for invalid relative signs", () => {
       expect(() => Parser.parse("1.23[+5,+6]")).toThrow();
       expect(() => Parser.parse("1.23[-5,-6]")).toThrow();
-      // Note: 1.23[5,6] is now valid range notation with comma separator
     });
 
     it("throws error for non-numeric range values", () => {
@@ -170,12 +187,8 @@ describe("Decimal Uncertainty Parsing", () => {
       expect(() => Parser.parse("1.23[+-]")).toThrow(
         "Symmetric notation must have a valid number after +- or -+",
       );
-      expect(() => Parser.parse("1.23[-+a]")).toThrow(
-        "Symmetric notation must have a valid number after +- or -+",
-      );
-      expect(() => Parser.parse("1.23[+-5.a]")).toThrow(
-        "Symmetric notation must have a valid number after +- or -+",
-      );
+      expect(() => Parser.parse("1.23[-+a]")).toThrow();
+      expect(() => Parser.parse("1.23[+-5.a]")).toThrow();
     });
   });
 
@@ -330,5 +343,16 @@ describe("Exact Decimal Intervals", () => {
     const result = interval.toRepeatingDecimal();
 
     expect(result).toBe("1.23#0:1.34#0");
+  });
+
+  describe("base support", () => {
+    it("parses uncertainty notation in other bases (Hex)", () => {
+      const result = Parser.parse("1.a[b:c]", {
+        inputBase: BaseSystem.HEXADECIMAL,
+      });
+      // 1.ab (Hex) = 427/256, 1.ac (Hex) = 428/256
+      expect(result.low.equals(new Rational(427n, 256n))).toBe(true);
+      expect(result.high.equals(new Rational(428n, 256n))).toBe(true);
+    });
   });
 });
