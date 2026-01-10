@@ -591,6 +591,10 @@ function parseBaseNotation(numberStr, baseSystem, options = {}) {
     } else if (prefix === "D") {
       // Special prefix for "default input base" - keep current baseSystem
       numberStr = numberStr.substring(2);
+    } else if (prefix === "d") {
+      // Explicit strict decimal base (0d)
+      baseSystem = BaseSystem.DECIMAL;
+      numberStr = numberStr.substring(2);
     } else {
       // If it looks like a prefix but isn't registered, throw error
       // Exception: 'E' is special for scientific notation
