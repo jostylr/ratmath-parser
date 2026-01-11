@@ -945,8 +945,39 @@ export class Parser {
     // Replace "/ " with "/S" (temporary marker) to preserve space information
     expression = expression.replace(/\/ /g, "/S");
 
-    // Remove all whitespace
-    expression = expression.replace(/\s+/g, "");
+    // Remove whitespace context-aware (Preserve Strings)
+    let cleanExpr = "";
+    let inString = false;
+    let i = 0;
+    while (i < expression.length) {
+      const c = expression[i];
+      if (c === '"') {
+        // Toggle string state, handle escaped quotes if inside
+        if (inString) {
+          // check for escaped quote
+          let backslashCount = 0;
+          let j = i - 1;
+          while (j >= 0 && expression[j] === '\\') {
+            backslashCount++;
+            j--;
+          }
+          if (backslashCount % 2 === 0) {
+            inString = false;
+          }
+        } else {
+          inString = true;
+        }
+        cleanExpr += c;
+      } else {
+        if (inString) {
+          cleanExpr += c;
+        } else if (!/\s/.test(c)) {
+          cleanExpr += c;
+        }
+      }
+      i++;
+    }
+    expression = cleanExpr;
 
     // Parse the expression
     const result = Parser.#parseExpression(expression, options);
@@ -1073,6 +1104,108 @@ export class Parser {
     return {
       value: Parser.#promoteType(result.value, options),
       remainingExpr: currentExpr,
+    };
+  }
+
+  /**
+   * Parses a string literal: "..."
+   * Handles escape sequences: \" \\ \uXXXX.
+   * @private
+   */
+  static #parseStringLiteral(expr) {
+    // Current expr starts with "
+    let i = 1;
+    let result = "";
+    while (i < expr.length) {
+      const char = expr[i];
+      if (char === '"') {
+        // End of string
+        return {
+          value: result, // Return generic string (treated as value)
+          remainingExpr: expr.substring(i + 1),
+        };
+      } else if (char === '\\') {
+        // Escape sequence
+        i++;
+        if (i >= expr.length) throw new Error("Unterminated string literal (trailing backslash)");
+        const nextChar = expr[i];
+        if (nextChar === '"') result += '"';
+        else if (nextChar === '\\') result += '\\';
+        else if (nextChar === 'u') {
+          // Unicode \uXXXX
+          if (i + 4 >= expr.length) throw new Error("Invalid unicode escape sequence");
+          const hex = expr.substring(i + 1, i + 5);
+          if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw new Error("Invalid unicode escape sequence");
+          result += String.fromCharCode(parseInt(hex, 16));
+          i += 4;
+        } else {
+          // preserve literal backslash if not special? 
+          // User said: "usual escape key of blackslash is used: \" is a literal quote and \\ is literal backslash. and \u... Otherwise, the string is literal."
+          // So \a becomes a
+          result += nextChar;
+        }
+      } else {
+        result += char;
+      }
+      i++;
+    }
+    throw new Error("Unterminated string literal");
+  }
+
+  /**
+   * Parses a list literal: [...]
+   * Recursively parses elements separated by comma.
+   * @private
+   */
+  static #parseListLiteral(expr, options) {
+    // Current expr starts with [
+    let currentExpr = expr.substring(1).trim(); // Skip [ and trim
+    // Note: Parser.parse removes whitespace globally, but inside parseFactor we operate on a string that had whitespace removed already?
+    // Parser.parse (line 949) does `expression = expression.replace(/\s+/g, "");`.
+    // So `[a, b]` becomes `[a,b]`. 
+    // Except strings! 
+    // Wait. Global whitespace removal RUINS string literals.
+    // "Hello World" -> "HelloWorld".
+    // 
+    // CRITICAL ISSUE: Parser.parse strips logic.
+    // We must fix Parser.parse to respect strings/lists preservation.
+    // 
+    // For now, let's implement the logic assuming we receive clean input (or stripped input).
+    // I will need to revisit `Parser.parse` to make whitespace removal context-aware.
+
+    const values = [];
+
+    // Check for empty list []
+    if (currentExpr.startsWith("]")) {
+      return {
+        value: { type: 'sequence', values: [] },
+        remainingExpr: currentExpr.substring(1)
+      };
+    }
+
+    while (true) {
+      // Parse expression for element
+      // Using parseExpression? Or parseTerm? List elements can be expressions "1+2".
+      const elemResult = Parser.#parseExpression(currentExpr, options);
+      values.push(elemResult.value);
+      currentExpr = elemResult.remainingExpr;
+
+      if (currentExpr.length === 0) throw new Error("Unterminated list literal");
+
+      if (currentExpr[0] === ',') {
+        currentExpr = currentExpr.substring(1);
+        // Continue loop
+      } else if (currentExpr[0] === ']') {
+        currentExpr = currentExpr.substring(1);
+        break;
+      } else {
+        throw new Error(`Unexpected token in list: ${currentExpr[0]}`);
+      }
+    }
+
+    return {
+      value: { type: 'sequence', values: values },
+      remainingExpr: currentExpr
     };
   }
 
@@ -1890,6 +2023,36 @@ export class Parser {
           remainingExpr: argResult.remainingExpr.substring(1)
         };
       }
+    }
+
+    // Check for String Literal
+    if (expr[0] === '"') {
+      const stringResult = Parser.#parseStringLiteral(expr);
+      return stringResult;
+    }
+
+    // Check for List Literal
+    if (expr[0] === "[") {
+      // Disambiguate with uncertainty notation or base notation
+      // Uncertainty/Interval usually follows a number. parseFactor handles START of factor.
+      // However, [1,2] could be a list OR an interval?
+      // user said "Lists... literal... [...]"
+      // [1, 2, 3] is list.
+      // [1:5] is interval? or list?
+      // If it contains comma, likely list (unless uncertainty rel/range).
+      // But uncertainty is suffix.
+      // Standalone [a,b] is list.
+      // Standalone [a:b] might be interval?
+      // Existing parser handles intervals via `parseInterval` which calls `parseBaseNotation`.
+      // `parseBaseNotation` handles `1:5`.
+      // `parseInterval` calls `parseBaseNotation`.
+      // If we see `[`, it is likely a list.
+      // Intervals in RatMath are usually `a:b` or `1.2[3]` or `1.2[+1]`.
+      // Standalone `[1,2]` is NOT currently valid interval syntax in RatMath (it uses `1:2`).
+      // So `[` at start of factor is safely a List.
+
+      const listResult = Parser.#parseListLiteral(expr, options);
+      return listResult;
     }
 
     // Check for base notation first (like 101[2], FF[16], A[16]:F[16], etc.)

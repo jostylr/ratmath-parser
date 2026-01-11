@@ -849,7 +849,7 @@ describe("BaseSystem", () => {
     afterAll(() => {
       // Cleanup custom prefixes
       BaseSystem.unregisterPrefix("q");
-      BaseSystem.unregisterPrefix("d");
+      BaseSystem.registerPrefix("d", BaseSystem.DECIMAL); // Restore default
       BaseSystem.unregisterPrefix("z");
       BaseSystem.unregisterPrefix("t");
       BaseSystem.unregisterPrefix("e");
