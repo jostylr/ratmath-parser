@@ -968,8 +968,8 @@ export class Parser {
     }
     expression = cleanExpr;
 
-    // Parse the expression
-    const result = Parser.#parseExpression(expression, options);
+    // Parse the expression (starting with logical OR - lowest precedence)
+    const result = Parser.#parseOr(expression, options);
 
     if (result.remainingExpr.length > 0) {
       throw new Error(`Unexpected token at end: ${result.remainingExpr}`);
@@ -979,10 +979,154 @@ export class Parser {
   }
 
   /**
+   * Parses logical OR (||)
+   * Lowest precedence
+   * @private
+   */
+  static #parseOr(expr, options = {}) {
+    let result = Parser.#parseAnd(expr, options);
+    let currentExpr = result.remainingExpr;
+
+    while (currentExpr.startsWith('||')) {
+      currentExpr = currentExpr.substring(2);
+      const rightResult = Parser.#parseAnd(currentExpr, options);
+      currentExpr = rightResult.remainingExpr;
+      
+      // OR: returns 1 if either is truthy
+      const leftTruthy = Parser.#isTruthy(result.value);
+      const rightTruthy = Parser.#isTruthy(rightResult.value);
+      result.value = new Integer(leftTruthy || rightTruthy ? 1n : 0n);
+    }
+
+    return {
+      value: result.value,
+      remainingExpr: currentExpr,
+    };
+  }
+
+  /**
+   * Parses logical AND (&&)
+   * @private
+   */
+  static #parseAnd(expr, options = {}) {
+    let result = Parser.#parseComparison(expr, options);
+    let currentExpr = result.remainingExpr;
+
+    while (currentExpr.startsWith('&&')) {
+      currentExpr = currentExpr.substring(2);
+      const rightResult = Parser.#parseComparison(currentExpr, options);
+      currentExpr = rightResult.remainingExpr;
+      
+      // AND: returns 1 only if both are truthy
+      const leftTruthy = Parser.#isTruthy(result.value);
+      const rightTruthy = Parser.#isTruthy(rightResult.value);
+      result.value = new Integer(leftTruthy && rightTruthy ? 1n : 0n);
+    }
+
+    return {
+      value: result.value,
+      remainingExpr: currentExpr,
+    };
+  }
+
+  /**
+   * Helper to check if a value is truthy (non-zero)
+   * @private
+   */
+  static #isTruthy(val) {
+    if (val instanceof Integer) {
+      return val.value !== 0n;
+    } else if (val instanceof Rational) {
+      return val.numerator !== 0n;
+    } else if (typeof val === 'number') {
+      return val !== 0;
+    } else if (typeof val === 'bigint') {
+      return val !== 0n;
+    }
+    return Boolean(val);
+  }
+
+  /**
+   * Parses comparison operators (<, >, <=, >=, ==, !=)
+   * @private
+   */
+  static #parseComparison(expr, options = {}) {
+    let result = Parser.#parseAddSub(expr, options);
+    let currentExpr = result.remainingExpr;
+
+    // Check for comparison operators (longest match first)
+    const comparisonOps = ['<=', '>=', '==', '!=', '<', '>'];
+    
+    while (currentExpr.length > 0) {
+      let matchedOp = null;
+      for (const op of comparisonOps) {
+        if (currentExpr.startsWith(op)) {
+          matchedOp = op;
+          break;
+        }
+      }
+      
+      if (!matchedOp) break;
+      
+      currentExpr = currentExpr.substring(matchedOp.length);
+      const rightResult = Parser.#parseAddSub(currentExpr, options);
+      currentExpr = rightResult.remainingExpr;
+      
+      // Evaluate comparison - returns Integer(1) for true, Integer(0) for false
+      const left = result.value;
+      const right = rightResult.value;
+      let compResult;
+      
+      if (matchedOp === '==') {
+        if (left.equals && right.equals) {
+          compResult = left.equals(right) ? 1n : 0n;
+        } else {
+          compResult = left === right ? 1n : 0n;
+        }
+      } else if (matchedOp === '!=') {
+        if (left.equals && right.equals) {
+          compResult = !left.equals(right) ? 1n : 0n;
+        } else {
+          compResult = left !== right ? 1n : 0n;
+        }
+      } else if (matchedOp === '<' || matchedOp === '<=' || matchedOp === '>' || matchedOp === '>=') {
+        // Use subtract to compare (works for Rational/Integer)
+        let diff;
+        if (left.subtract && typeof left.subtract === 'function') {
+          diff = left.subtract(right);
+        } else {
+          // Fallback for primitive comparison
+          const leftVal = Number(left);
+          const rightVal = Number(right);
+          if (matchedOp === '<') compResult = leftVal < rightVal ? 1n : 0n;
+          else if (matchedOp === '<=') compResult = leftVal <= rightVal ? 1n : 0n;
+          else if (matchedOp === '>') compResult = leftVal > rightVal ? 1n : 0n;
+          else if (matchedOp === '>=') compResult = leftVal >= rightVal ? 1n : 0n;
+          result.value = new Integer(compResult);
+          continue;
+        }
+        
+        const sign = diff.sign ? diff.sign() : (diff.numerator > 0n ? 1 : diff.numerator < 0n ? -1 : 0);
+        if (matchedOp === '<') compResult = sign < 0 ? 1n : 0n;
+        else if (matchedOp === '<=') compResult = sign <= 0 ? 1n : 0n;
+        else if (matchedOp === '>') compResult = sign > 0 ? 1n : 0n;
+        else if (matchedOp === '>=') compResult = sign >= 0 ? 1n : 0n;
+      }
+      
+      result.value = new Integer(compResult);
+    }
+
+    return {
+      value: result.value,
+      remainingExpr: currentExpr,
+    };
+  }
+
+  /**
    * Parses an expression with addition and subtraction
    * @private
    */
-  static #parseExpression(expr, options = {}) {
+  static #parseAddSub(expr, options = {}) {
     let result = Parser.#parseTerm(expr, options);
     let currentExpr = result.remainingExpr;
 
@@ -1175,7 +1319,7 @@ export class Parser {
     while (true) {
       // Parse expression for element
       // Using parseExpression? Or parseTerm? List elements can be expressions "1+2".
-      const elemResult = Parser.#parseExpression(currentExpr, options);
+      const elemResult = Parser.#parseAddSub(currentExpr, options);
       values.push(elemResult.value);
       currentExpr = elemResult.remainingExpr;
 
@@ -1209,7 +1353,7 @@ export class Parser {
 
     // Handle parenthesized expressions
     if (expr[0] === "(") {
-      const subExprResult = Parser.#parseExpression(expr.substring(1), options);
+      const subExprResult = Parser.#parseAddSub(expr.substring(1), options);
 
       if (
         subExprResult.remainingExpr.length === 0 ||
@@ -1281,7 +1425,8 @@ export class Parser {
           }
         } else if (
           factorialResult.remainingExpr.length > 0 &&
-          factorialResult.remainingExpr[0] === "!"
+          factorialResult.remainingExpr[0] === "!" &&
+          factorialResult.remainingExpr[1] !== "="  // Don't consume ! if it's part of !=
         ) {
           // Single factorial
           if (factorialResult.value instanceof Integer) {
@@ -1501,7 +1646,8 @@ export class Parser {
         }
       } else if (
         factorialResult.remainingExpr.length > 0 &&
-        factorialResult.remainingExpr[0] === "!"
+        factorialResult.remainingExpr[0] === "!" &&
+        factorialResult.remainingExpr[1] !== "="  // Don't consume ! if it's part of !=
       ) {
         // Single factorial
         if (factorialResult.value instanceof Integer) {
@@ -1827,7 +1973,8 @@ export class Parser {
         }
       } else if (
         factorialResult.remainingExpr.length > 0 &&
-        factorialResult.remainingExpr[0] === "!"
+        factorialResult.remainingExpr[0] === "!" &&
+        factorialResult.remainingExpr[1] !== "="  // Don't consume ! if it's part of !=
       ) {
         // Single factorial
         if (factorialResult.value instanceof Integer) {
@@ -1999,7 +2146,8 @@ export class Parser {
       }
     } else if (
       factorialResult.remainingExpr.length > 0 &&
-      factorialResult.remainingExpr[0] === "!"
+      factorialResult.remainingExpr[0] === "!" &&
+      factorialResult.remainingExpr[1] !== "="  // Don't consume ! if it's part of !=
     ) {
       // Single factorial
       if (factorialResult.value instanceof Integer) {
@@ -2050,7 +2198,7 @@ export class Parser {
 
         // Check if exponent starts with parentheses (fractional exponent)
         if (powerExpr.startsWith('(')) {
-          powerResult = Parser.#parseExpression(powerExpr.substring(1), options);
+          powerResult = Parser.#parseAddSub(powerExpr.substring(1), options);
           if (powerResult.remainingExpr.length === 0 || powerResult.remainingExpr[0] !== ')') {
             throw new Error('Missing closing parenthesis in exponent');
           }
@@ -2110,7 +2258,7 @@ export class Parser {
 
         // Check if exponent starts with parentheses (fractional exponent)
         if (powerExpr.startsWith('(')) {
-          powerResult = Parser.#parseExpression(powerExpr.substring(1), options);
+          powerResult = Parser.#parseAddSub(powerExpr.substring(1), options);
           if (powerResult.remainingExpr.length === 0 || powerResult.remainingExpr[0] !== ')') {
             throw new Error('Missing closing parenthesis in exponent');
           }
@@ -2121,7 +2269,7 @@ export class Parser {
             powerResult = Parser.#parseExponent(powerExpr);
           } catch (e) {
             // If integer parsing fails, try parsing as general expression
-            powerResult = Parser.#parseExpression(powerExpr, options);
+            powerResult = Parser.#parseAddSub(powerExpr, options);
           }
         }
 
