@@ -552,9 +552,9 @@ function parseRepeatingDecimalInterval(str) {
  */
 function parseBaseNotation(numberStr, baseSystem, options = {}) {
   // Check for deprecated bracket notation first and throw error
-  if (/\[[0-9a-zA-Z]+\]$/.test(numberStr)) {
+  if (/\[[0-9a-zA-Z]+\]$/.test(numberStr) && !numberStr.startsWith("0z[")) {
     throw new Error(
-      "Bracket base notation (Value[Base]) is no longer supported. Use prefix notation (0xValue, 0bValue) or the BASE command."
+      `Bracket base notation (Value[Base]) is no longer supported. Use prefix notation (0xValue, 0bValue) or the BASE command. Offending string: '${numberStr}'`
     );
   }
 
@@ -565,30 +565,39 @@ function parseBaseNotation(numberStr, baseSystem, options = {}) {
     numberStr = numberStr.substring(1);
   }
 
-  // Check for prefix notation (0x, 0b, etc.)
-  // Regex: starts with 0 follow by a letter
-  const prefixMatch = numberStr.match(/^0([a-zA-Z])/);
-  if (prefixMatch) {
-    const prefix = prefixMatch[1];
-    const registeredBase = BaseSystem.getSystemForPrefix(prefix);
-    // console.log(`DEBUG: prefix='${prefix}', registeredBase=${!!registeredBase}`);
+  // Check for custom base notation (0z[N])
+  const customBaseMatch = numberStr.match(/^0z\[(\d+)\]/i);
+  if (customBaseMatch) {
+    const baseValue = parseInt(customBaseMatch[1], 10);
+    try {
+      baseSystem = BaseSystem.fromBase(baseValue);
+    } catch (e) {
+      throw new Error(`Invalid custom base '0z[${baseValue}]': ${e.message}`);
+    }
+    numberStr = numberStr.substring(customBaseMatch[0].length);
+  } else {
+    // Check for prefix notation (0x, 0b, etc.)
+    // Regex: starts with 0 follow by a letter
+    const prefixMatch = numberStr.match(/^0([a-zA-Z])/);
+    if (prefixMatch) {
+      const prefix = prefixMatch[1];
+      const registeredBase = BaseSystem.getSystemForPrefix(prefix);
+      // console.log(`DEBUG: prefix='${prefix}', registeredBase=${!!registeredBase}`);
 
-    if (registeredBase) {
-      // Switch base system and strip prefix
-      baseSystem = registeredBase;
-      numberStr = numberStr.substring(2); // Skip '0' and prefix char (e.g. '0x')
-    } else if (prefix === "D") {
-      // Special prefix for "default input base" - keep current baseSystem
-      numberStr = numberStr.substring(2);
-    } else if (prefix === "d") {
-      // Explicit strict decimal base (0d)
-      baseSystem = BaseSystem.DECIMAL;
-      numberStr = numberStr.substring(2);
-    } else {
-      // If it looks like a prefix but isn't registered, throw error
-      // Exception: 'E' is special for scientific notation
-      if (prefix.toLowerCase() !== "e") {
-        throw new Error(`Invalid or unregistered prefix '0${prefix}'`);
+      if (registeredBase) {
+        // Switch base system and strip prefix
+        baseSystem = registeredBase;
+        numberStr = numberStr.substring(2); // Skip '0' and prefix char (e.g. '0x')
+      } else if (prefix === "D") {
+        // Special prefix for "default input base" - keep current baseSystem
+        numberStr = numberStr.substring(2);
+      } else {
+        // If it looks like a prefix but isn't registered, throw error
+        // Exception: 'E' is special for scientific notation
+        if (prefix.toLowerCase() !== "e") {
+          // We throw an explicit error with the parsed string to debug
+          throw new Error(`Invalid or unregistered prefix '0${prefix}' for string '${numberStr}'`);
+        }
       }
     }
   }
@@ -991,7 +1000,7 @@ export class Parser {
       currentExpr = currentExpr.substring(2);
       const rightResult = Parser.#parseAnd(currentExpr, options);
       currentExpr = rightResult.remainingExpr;
-      
+
       // OR: returns 1 if either is truthy
       const leftTruthy = Parser.#isTruthy(result.value);
       const rightTruthy = Parser.#isTruthy(rightResult.value);
@@ -1016,7 +1025,7 @@ export class Parser {
       currentExpr = currentExpr.substring(2);
       const rightResult = Parser.#parseComparison(currentExpr, options);
       currentExpr = rightResult.remainingExpr;
-      
+
       // AND: returns 1 only if both are truthy
       const leftTruthy = Parser.#isTruthy(result.value);
       const rightTruthy = Parser.#isTruthy(rightResult.value);
@@ -1056,7 +1065,7 @@ export class Parser {
 
     // Check for comparison operators (longest match first)
     const comparisonOps = ['<=', '>=', '==', '!=', '<', '>'];
-    
+
     while (currentExpr.length > 0) {
       let matchedOp = null;
       for (const op of comparisonOps) {
@@ -1065,18 +1074,18 @@ export class Parser {
           break;
         }
       }
-      
+
       if (!matchedOp) break;
-      
+
       currentExpr = currentExpr.substring(matchedOp.length);
       const rightResult = Parser.#parseAddSub(currentExpr, options);
       currentExpr = rightResult.remainingExpr;
-      
+
       // Evaluate comparison - returns Integer(1) for true, Integer(0) for false
       const left = result.value;
       const right = rightResult.value;
       let compResult;
-      
+
       if (matchedOp === '==') {
         if (left.equals && right.equals) {
           compResult = left.equals(right) ? 1n : 0n;
@@ -1105,14 +1114,14 @@ export class Parser {
           result.value = new Integer(compResult);
           continue;
         }
-        
+
         const sign = diff.sign ? diff.sign() : (diff.numerator > 0n ? 1 : diff.numerator < 0n ? -1 : 0);
         if (matchedOp === '<') compResult = sign < 0 ? 1n : 0n;
         else if (matchedOp === '<=') compResult = sign <= 0 ? 1n : 0n;
         else if (matchedOp === '>') compResult = sign > 0 ? 1n : 0n;
         else if (matchedOp === '>=') compResult = sign >= 0 ? 1n : 0n;
       }
-      
+
       result.value = new Integer(compResult);
     }
 
@@ -1863,14 +1872,15 @@ export class Parser {
     if (expr.includes("[") && expr.includes("]")) {
       // Check if it matches base notation pattern specifically
       const baseMatch = expr.match(/^([-\w./:^]+(?::[-\w./:^]+)?)\[(\d+)\]/);
-      if (baseMatch) {
+      const isCustomBase = /^-*0z\[\d+\]/i.test(expr);
+      if (baseMatch && !isCustomBase) {
         throw new Error(
           "Bracket base notation (Value[Base]) is no longer supported. Use prefix notation (0xValue, 0bValue) or the BASE command."
         );
       }
 
       // If not base notation, check for uncertainty notation
-      const uncertaintyMatch = expr.match(/^(-?[@\w./:^]+)\[([^\]]+)\]((?:[Ee][+-]?[\w]+|\_?\^-?[\w]+)?)/);
+      const uncertaintyMatch = !isCustomBase ? expr.match(/^(-?[@\w./:^]+)\[([^\]]+)\]((?:[Ee][+-]?[\w]+|\_?\^-?[\w]+)?)/) : null;
       if (uncertaintyMatch) {
         const fullMatch = uncertaintyMatch[0];
         try {
@@ -1887,7 +1897,9 @@ export class Parser {
     }
 
     // Check for negation (but only if it's not part of uncertainty notation or interval notation)
-    if (expr[0] === "-" && !expr.includes("[") && !expr.includes(":")) {
+    const isCustomBasePrefix = /^-*0z\[\d+\]/i.test(expr);
+    const isUncertainty = expr.includes("[") && !isCustomBasePrefix;
+    if (expr[0] === "-" && !isUncertainty && !expr.includes(":")) {
       const factorResult = Parser.#parseFactor(expr.substring(1), options);
 
       // Negate the value - type-aware for new parsing, backward compatible for old
@@ -3052,46 +3064,52 @@ export class Parser {
    */
   static #parseRational(expr, options = {}) {
     expr = expr.trim();
-    // Check for prefix notation at the start (e.g., 0x, 0b) and override input base
-    const prefixMatch = expr.match(/^(-?)0([a-zA-Z])/);
+    // Check for prefix notation at the start (e.g., 0z[N], 0x, 0b) and override input base
+    const prefixMatch = expr.trim().match(/^(-?)(?:0z\[(\d+)\]|0([a-zA-Z]))/i);
     let isExplicitPrefix = false;
 
     if (prefixMatch) {
       const isNegative = prefixMatch[1] === "-";
-      const prefix = prefixMatch[2];
-      const registeredBase = BaseSystem.getSystemForPrefix(prefix);
+      let baseSystem;
+      let matchedPrefixLength;
 
-      if (registeredBase) {
+      if (prefixMatch[2]) { // Matched 0z[N]
+        try {
+          baseSystem = BaseSystem.fromBase(parseInt(prefixMatch[2], 10));
+          matchedPrefixLength = prefixMatch[0].length;
+        } catch (e) {
+          throw new Error(`Invalid custom base '0z[${prefixMatch[2]}]': ${e.message}`);
+        }
+      } else if (prefixMatch[3]) { // Matched 0[letter]
+        const prefixChar = prefixMatch[3];
+        baseSystem = BaseSystem.getSystemForPrefix(prefixChar);
+        matchedPrefixLength = prefixMatch[0].length;
+
+        if (!baseSystem && prefixChar.toLowerCase() !== "e" && prefixChar !== "D") {
+          // Strictly require valid prefixes for 0[letter] notation, unless 'E' or 'D'
+          throw new Error(`Invalid or unregistered prefix '0${prefixChar}'`);
+        }
+      }
+
+      if (baseSystem || (prefixMatch[3] && prefixMatch[3] === "D")) { // 'D' is a special case for default base
         // Create new options with the specific base
-        options = { ...options, inputBase: registeredBase };
+        options = { ...options, inputBase: baseSystem || options.inputBase };
         isExplicitPrefix = true;
 
         // Strip the prefix (keep negative sign if present)
-        expr = (isNegative ? "-" : "") + expr.substring(prefixMatch[0].length);
-      } else if (prefix === "D") {
-        // Special prefix for "default input base" - remove prefix but keep base as is
-        isExplicitPrefix = true;
-        expr = (isNegative ? "-" : "") + expr.substring(prefixMatch[0].length);
-      } else {
-        // Strictly require valid prefixes for 0[letter] notation
-        // Exception: 'E' is reserved for scientific notation unless registered as a prefix
-        if (prefix.toLowerCase() !== "e") {
-          throw new Error(`Invalid or unregistered prefix '0${prefix}'`);
-        }
+        expr = (isNegative ? "-" : "") + expr.substring(matchedPrefixLength);
       }
-    }
-
-    if (expr.length === 0) {
+    } if (expr.length === 0) {
       throw new Error("Unexpected end of expression");
     }
 
-    // If inputBase is specified and this doesn't look like explicit base notation (old bracket style),
-    // try parsing with the input base first
+    // If inputBase is specified and this doesn't look like explicit base notation (old bracket style)
+    // or hash/positional notation for the CURRENT number, try parsing with the input base first
     if (
       options.inputBase &&
       options.inputBase !== BaseSystem.DECIMAL &&
-      !expr.includes("[") &&
-      !expr.includes("#")
+      !/^[\w./:^-]+\[\d+\]/.test(expr) &&
+      !/^[\w./:^-]+#/.test(expr)
     ) {
       // Find the end of what could be a number in the input base
       let endIndex = 0;
@@ -3174,18 +3192,25 @@ export class Parser {
 
           // Check for prefix syntax in denominator (e.g. 1/0b10)
           // If found, switch validation base for the denominator part
-          if (endIndex + 1 < expr.length) {
-            const potentialPrefix = expr.substring(endIndex, endIndex + 2); // '0' + char
+          // Also check for 0z[N]
+          if (endIndex < expr.length) { // Check if there's anything left to parse
+            const potentialPrefix = expr.substring(endIndex); // Check rest of string
+            const customSubMatch = potentialPrefix.match(/^0z\[(\d+)\]/i);
             const subPrefixMatch = potentialPrefix.match(/^0([a-zA-Z])/);
-            if (subPrefixMatch) {
+
+            if (customSubMatch) {
+              try {
+                validationBase = BaseSystem.fromBase(parseInt(customSubMatch[1], 10));
+                endIndex += customSubMatch[0].length;
+              } catch (e) {
+                // If invalid custom base, treat it as not a prefix and continue
+                // The number parsing will fail later if it's not a valid number in the current base
+              }
+            } else if (subPrefixMatch) {
               const prefixChar = subPrefixMatch[1];
               const subBase = BaseSystem.getSystemForPrefix(prefixChar);
               if (subBase || prefixChar === "D") {
                 if (subBase) validationBase = subBase;
-                // Don't skip index, let the loop validate '0' and char against new base
-                // Actually, '0' is valid in almost all bases. 
-                // Prefix char (e.g. 'b') might NOT be valid in new base (Binary doesn't have 'b').
-                // So we must unconditionaly accept the prefix characters.
                 endIndex += 2;
               }
             }
