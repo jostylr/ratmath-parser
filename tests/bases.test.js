@@ -39,8 +39,23 @@ describe("BaseSystem", () => {
       ]);
     });
 
-    it("should create base system with explicit character list", () => {
+    it("should create base system with explicit character list passed as array", () => {
       const octal = new BaseSystem("01234567".split(""));
+      expect(octal.base).toBe(8);
+      expect(octal.characters).toEqual([
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+      ]);
+    });
+
+    it("should create base system with explicit character list passed as string", () => {
+      const octal = new BaseSystem("01234567");
       expect(octal.base).toBe(8);
       expect(octal.characters).toEqual([
         "0",
@@ -126,6 +141,26 @@ describe("BaseSystem", () => {
       expect(BaseSystem.BINARY.name).toBe("Binary");
     });
 
+    it("should have correct TERNARY preset", () => {
+      expect(BaseSystem.TERNARY.base).toBe(3);
+      expect(BaseSystem.TERNARY.characters).toEqual(["0", "1", "2"]);
+    });
+
+    it("should have correct QUATERNARY preset", () => {
+      expect(BaseSystem.QUATERNARY.base).toBe(4);
+      expect(BaseSystem.QUATERNARY.characters).toEqual(["0", "1", "2", "3"]);
+    });
+
+    it("should have correct QUINARY preset", () => {
+      expect(BaseSystem.QUINARY.base).toBe(5);
+      expect(BaseSystem.QUINARY.characters).toEqual(["0", "1", "2", "3", "4"]);
+    });
+
+    it("should have correct SEPTENARY preset", () => {
+      expect(BaseSystem.SEPTENARY.base).toBe(7);
+      expect(BaseSystem.SEPTENARY.characters).toEqual(["0", "1", "2", "3", "4", "5", "6"]);
+    });
+
     it("should have correct OCTAL preset", () => {
       expect(BaseSystem.OCTAL.base).toBe(8);
       expect(BaseSystem.OCTAL.characters).toEqual([
@@ -181,10 +216,16 @@ describe("BaseSystem", () => {
       expect(BaseSystem.HEXADECIMAL.name).toBe("Hexadecimal");
     });
 
+    it("should have correct VIGESIMAL preset", () => {
+      expect(BaseSystem.VIGESIMAL.base).toBe(20);
+      expect(BaseSystem.VIGESIMAL.characters.length).toBe(20);
+      expect(BaseSystem.VIGESIMAL.name).toBe("Vigesimal (Base 20)");
+    });
+
     it("should have correct BASE36 preset", () => {
       expect(BaseSystem.BASE36.base).toBe(36);
       expect(BaseSystem.BASE36.characters.length).toBe(36);
-      expect(BaseSystem.BASE36.name).toBe("Base 36");
+      expect(BaseSystem.BASE36.name).toBe("Base 36 (URL)");
     });
 
     it("should have correct BASE62 preset", () => {
@@ -192,13 +233,19 @@ describe("BaseSystem", () => {
       expect(BaseSystem.BASE62.characters.length).toBe(62);
       expect(BaseSystem.BASE62.name).toBe("Base 62");
     });
+
+    it("should have correct BASE64 preset", () => {
+      expect(BaseSystem.BASE64.base).toBe(64);
+      expect(BaseSystem.BASE64.characters.length).toBe(64);
+      expect(BaseSystem.BASE64.name).toBe("Base 64");
+    });
   });
 
   describe("Extended Base Presets", () => {
     it("should have correct BASE60 preset", () => {
       expect(BaseSystem.BASE60.base).toBe(60);
       expect(BaseSystem.BASE60.characters.length).toBe(60);
-      expect(BaseSystem.BASE60.name).toBe("Base 60 (Sexagesimal)");
+      expect(BaseSystem.BASE60.name).toBe("Base 60 (Mesopotamia)");
     });
 
     it("should have correct ROMAN preset", () => {
@@ -839,19 +886,11 @@ describe("BaseSystem", () => {
   describe("Parser Integration", () => {
     beforeAll(() => {
       // Register custom prefixes for testing
-      BaseSystem.registerPrefix("q", BaseSystem.fromBase(5));
-      BaseSystem.registerPrefix("d", BaseSystem.fromBase(12));
-      BaseSystem.registerPrefix("z", BaseSystem.fromBase(36));
-      BaseSystem.registerPrefix("t", BaseSystem.fromBase(3));
       BaseSystem.registerPrefix("e", new BaseSystem(BaseParser.parseDefinition("0-9A-E"), "Base 15 with E"));
     });
 
     afterAll(() => {
       // Cleanup custom prefixes
-      BaseSystem.unregisterPrefix("q");
-      BaseSystem.registerPrefix("d", BaseSystem.DECIMAL); // Restore default
-      BaseSystem.unregisterPrefix("z");
-      BaseSystem.unregisterPrefix("t");
       BaseSystem.unregisterPrefix("e");
     });
 
@@ -875,9 +914,9 @@ describe("BaseSystem", () => {
       });
 
       it("should parse numbers in various bases", () => {
-        expect(Parser.parse("0q132").toString()).toBe("42"); // Base 5
+        expect(Parser.parse("0f132").toString()).toBe("42"); // Base 5
         expect(Parser.parse("0d36").toString()).toBe("42");  // Base 12
-        expect(Parser.parse("0z16").toString()).toBe("42");  // Base 36
+        expect(Parser.parse("0u16").toString()).toBe("42");  // Base 36
       });
 
       it("should handle negative numbers", () => {
