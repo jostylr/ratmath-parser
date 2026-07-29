@@ -20,7 +20,7 @@ import { parseRepeatingDecimal } from '../index.js';
 describe('Relative Decimal Interval Roundtrip Tests', () => {
   describe('Basic Roundtrip Conversion', () => {
     it('roundtrips simple asymmetric intervals', () => {
-      // Test case: [1.224, 1.235] should become 1.23[+5,-6]
+      // Test case: [1.224, 1.235] should become 1.23[+0.5:-0.6]
       const original = new RationalInterval(new Rational("1.224"), new Rational("1.235"));
       const decimalForm = original.relativeDecimalInterval();
       const roundtrip = parseRepeatingDecimal(decimalForm);
@@ -33,7 +33,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
     });
 
     it('roundtrips symmetric intervals', () => {
-      // Test case: [1.22, 1.24] should become 1.23[+-10]
+      // Test case: [1.22, 1.24] should become 1.23[+-1]
       const original = new RationalInterval(new Rational("1.22"), new Rational("1.24"));
       const decimalForm = original.relativeDecimalInterval();
       const roundtrip = parseRepeatingDecimal(decimalForm);
@@ -45,7 +45,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
     });
 
     it('roundtrips integer-based intervals', () => {
-      // Test case: [77.7, 93.3] should become 85[+83,-73]
+      // Test case: [77.7, 93.3] should become 85[+83:-73]
       const original = new RationalInterval(new Rational("777", "10"), new Rational("933", "10"));
       const decimalForm = original.relativeDecimalInterval();
       const roundtrip = parseRepeatingDecimal(decimalForm);
@@ -246,7 +246,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       // Asymmetric case  
       const asymmetric = new RationalInterval(new Rational("1.224"), new Rational("1.235"));
       const asymmetricForm = asymmetric.relativeDecimalInterval();
-      expect(asymmetricForm).toMatch(/\[\+\d+,-\d+\]$/);
+      expect(asymmetricForm).toMatch(/\[\+\d+(?:\.\d+)?:-\d+(?:\.\d+)?\]$/);
     });
   });
 });

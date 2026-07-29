@@ -10,9 +10,10 @@ NUMBERS:
 
 INTERVALS:
   2:5                     Interval from 2 to 5
-  1.23[+-0.01]            Uncertainty notation (1.22:1.24)
-  1.2[3,6]                Decimal concatenation (1.23:1.26)
-  12[34,42]               Integer concatenation (1234:1242)
+  1.2[+-1]                Last-place uncertainty (1.1:1.3)
+  1.2[+-0.1]              Fractional last-place offset (1.19:1.21)
+  1.2[3:6]                Decimal concatenation (1.23:1.26)
+  12[34:42]               Integer concatenation (1234:1242)
 
 SCIENTIFIC NOTATION:
   1E3                     1000 (standard E notation)

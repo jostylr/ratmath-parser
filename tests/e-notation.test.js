@@ -33,22 +33,22 @@ describe("E Notation", () => {
 
   describe("Decimals with Uncertainty", () => {
     it("allows E notation in interval offsets", () => {
-      // 1.23[+2E2,-3E3] means +200, -3000 in thousandths place
-      // Base: 1.23, offsets: +0.2, -3.0 → -1.77:1.43
-      const result = Parser.parse("1.23[+2E2,-3E3]");
-      expect(result.low.equals(new Rational(-177, 100))).toBe(true);
-      expect(result.high.equals(new Rational(143, 100))).toBe(true);
+      // 1.23[+2E2:-3E3] means +200 and -3000 in hundredths.
+      // Base: 1.23, offsets: +2 and -30 → -28.77:3.23
+      const result = Parser.parse("1.23[+2E2:-3E3]");
+      expect(result.low.equals(new Rational(-2877, 100))).toBe(true);
+      expect(result.high.equals(new Rational(323, 100))).toBe(true);
     });
 
     it("allows E notation outside interval", () => {
-      // 1.23[2,3]E5 → (1.232:1.233)E5 → 123200:123300
-      const result = Parser.parse("1.23[2,3]E5");
+      // 1.23[2:3]E5 → (1.232:1.233)E5 → 123200:123300
+      const result = Parser.parse("1.23[2:3]E5");
       expect(result.low.equals(new Rational(123200))).toBe(true);
       expect(result.high.equals(new Rational(123300))).toBe(true);
     });
 
     it("rejects E notation inside center value", () => {
-      expect(() => Parser.parse("1.23E4[2,3]")).toThrow();
+      expect(() => Parser.parse("1.23E4[2:3]")).toThrow();
     });
   });
 

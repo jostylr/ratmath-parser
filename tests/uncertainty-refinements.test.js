@@ -5,10 +5,10 @@ import { Rational, BaseSystem } from "@ratmath/core";
 describe("Uncertainty Refinements", () => {
     describe("generalized E replacement (_^)", () => {
         it("supports _^ relative", () => {
-            // 1.2[+3]_^1 should be 1.2:1.23 * 10 = 12:12.3 
+            // 1.2[+3]_^1 is (1.2:1.5) * 10 = 12:15.
             const result = Parser.parse("1.2[+3]_^1");
             expect(result.low.equals(new Rational("12"))).toBe(true);
-            expect(result.high.equals(new Rational("12.3"))).toBe(true);
+            expect(result.high.equals(new Rational("15"))).toBe(true);
         });
 
         it("supports _^ absolute", () => {
@@ -20,10 +20,11 @@ describe("Uncertainty Refinements", () => {
 
         it("supports _^ in hex base relative", () => {
             // Hex base 1.a (1.625)
-            // 1.a[+b]_^1 becomes 1.a:1.ab * 0x10 = 1a:1a.b (26:26.6875)
+            // The offset b uses the last visible hexadecimal place (sixteenths).
+            // Multiplying 1.a:2.5 by 0x10 produces 0x1a:0x25 (26:37).
             const result = Parser.parse("1.a[+b]_^1", { inputBase: BaseSystem.HEXADECIMAL });
             expect(result.low.equals(new Rational("26"))).toBe(true);
-            expect(result.high.equals(new Rational(427n, 16n))).toBe(true);
+            expect(result.high.equals(new Rational("37"))).toBe(true);
         });
 
         it("supports _^ in hex base absolute", () => {
@@ -35,18 +36,14 @@ describe("Uncertainty Refinements", () => {
         });
 
         it("supports _^ in relative notation (internal)", () => {
-            // 1.2[+3_^2] -> relative offset is 300, scaled by 10^-2 is 3.
-            // 1.2 + 3 = 4.2.
+            // 1.2[+3_^2] -> relative offset is 300 tenths, or 30.
             const resultDec = Parser.parse("1.2[+3_^2]");
-            expect(resultDec.high.equals(new Rational("4.2"))).toBe(true);
+            expect(resultDec.high.equals(new Rational("31.2"))).toBe(true);
 
             // Hex base 1.a (1.625). offset b_^c = 11*16^12. 
-            // Scaled by 16^-2 = 12,094,627,905,536.
-            // 1.a*16^0 scaled? No, base value is 1.625.
-            // 1.625 + 12094627905536 = 12094627905537.625
+            // It is scaled by the last visible place, 16^-1.
             const result = Parser.parse("1.a[+b_^c]", { inputBase: BaseSystem.HEXADECIMAL });
-            // high = 1.625 + 11*16^12 / 256
-            const expectedHigh = new Rational(13n, 8n).add(new Rational(11n * (16n ** 12n), 256n));
+            const expectedHigh = new Rational(13n, 8n).add(new Rational(11n * (16n ** 12n), 16n));
             expect(result.high.equals(expectedHigh)).toBe(true);
         });
 
@@ -86,8 +83,8 @@ describe("Uncertainty Refinements", () => {
         });
         it("simple hex relative", () => {
             const result = Parser.parse("1.[+2:-3]", { inputBase: BaseSystem.HEXADECIMAL });
-            expect(result.low.equals(new Rational(13n, 16n))).toBe(true);
-            expect(result.high.equals(new Rational(9n, 8n))).toBe(true);
+            expect(result.low.equals(new Rational("-2"))).toBe(true);
+            expect(result.high.equals(new Rational("3"))).toBe(true);
         });
         it("simple dec absolute", () => {
             const result = Parser.parse("1.[2:3]");
@@ -96,8 +93,8 @@ describe("Uncertainty Refinements", () => {
         });
         it("simple dec relative", () => {
             const result = Parser.parse("1.[+2:-3]");
-            expect(result.low.equals(new Rational(7n, 10n))).toBe(true);
-            expect(result.high.equals(new Rational(6n, 5n))).toBe(true);
+            expect(result.low.equals(new Rational("-2"))).toBe(true);
+            expect(result.high.equals(new Rational("3"))).toBe(true);
         });
     });
 
@@ -106,7 +103,7 @@ describe("Uncertainty Refinements", () => {
     describe("reject E notation with uncertainty", () => {
         it("rejects E notation inside center value for digit appending", () => {
             // There should be a test for that and it is failing; it is under "rejects E notation inside center value"
-            expect(() => Parser.parse("1.23E2[56,67]")).toThrow();
+            expect(() => Parser.parse("1.23E2[56:67]")).toThrow();
         });
 
         it("rejects E notation for relative notation", () => {
