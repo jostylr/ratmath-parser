@@ -72,32 +72,30 @@ describe("Continued Fractions - Rational Class Integration", () => {
     expect(rational3.denominator).toBe(3n);
   });
 
-  test("should handle convergents computation", () => {
+  test("should compute convergents for an explicit coefficient sequence", () => {
     // Test convergents using recurrence relation:
     // p₋₁ = 1, p₀ = a₀, pₙ = aₙ * pₙ₋₁ + pₙ₋₂
     // q₋₁ = 0, q₀ = 1, qₙ = aₙ * qₙ₋₁ + qₙ₋₂
 
     const cf = [3, 7, 15, 1];
-    const rational = Rational.fromContinuedFraction(cf);
+    const convergents = Rational.convergentsFromCF(cf);
 
-    // Should have convergents property as array
-    expect(rational._convergents).toBeInstanceOf(Array);
-    expect(rational._convergents.length).toBeGreaterThan(0);
-
-    // First convergent should be [3/1]
-    expect(rational._convergents[0].numerator).toBe(3n);
-    expect(rational._convergents[0].denominator).toBe(1n);
+    expect(convergents.map((value) => value.toString())).toEqual([
+      "3",
+      "22/7",
+      "333/106",
+      "355/113",
+    ]);
   });
 
-  test("should store cf coefficients on instance", () => {
+  test("should derive coefficients from value without storing provenance", () => {
     const cf = [3, 7, 15, 1, 292];
     const rational = Rational.fromContinuedFraction(cf);
 
-    // Should have cf property without integer part
-    expect(rational.cf).toEqual([7n, 15n, 1n, 292n]);
-
-    // Should have wholePart set if not already defined
-    expect(rational.wholePart).toBe(3n);
+    expect(rational.toContinuedFraction()).toEqual([3n, 7n, 15n, 1n, 292n]);
+    expect(Object.hasOwn(rational, "cf")).toBe(false);
+    expect(Object.hasOwn(rational, "wholePart")).toBe(false);
+    expect(Object.hasOwn(rational, "_convergents")).toBe(false);
   });
 
   test("should convert Rational to continued fraction", () => {
@@ -106,11 +104,8 @@ describe("Continued Fractions - Rational Class Integration", () => {
     const cf = rational.toContinuedFraction();
 
     expect(cf).toBeInstanceOf(Array);
-    expect(cf[0]).toBe(3n); // Integer part
-    expect(cf.length).toBeGreaterThan(1);
-
-    // Should save CF on instance
-    expect(rational.cf).toBeInstanceOf(Array);
+    expect(cf).toEqual([3n, 7n, 16n]);
+    expect(Object.hasOwn(rational, "cf")).toBe(false);
   });
 
   test("should limit continued fraction terms", () => {
@@ -177,7 +172,8 @@ describe("Continued Fractions - String Representation", () => {
     const rational = Rational.fromContinuedFractionString(cfString);
 
     expect(rational).toBeInstanceOf(Rational);
-    expect(rational.cf).toEqual([7n, 15n, 1n, 292n]);
+    expect(rational.toContinuedFractionString()).toBe(cfString);
+    expect(Object.hasOwn(rational, "cf")).toBe(false);
   });
 });
 

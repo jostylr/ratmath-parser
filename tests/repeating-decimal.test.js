@@ -252,19 +252,10 @@ describe("parseRepeatingDecimal", () => {
       expect(result.equals(oneSixth)).toBe(true);
     });
 
-    it("verifies 22/7 ≈ 3.142857#142857 (not exactly but close)", () => {
+    it("verifies 22/7 = 3.#142857 exactly", () => {
       const result = parseRepeatingDecimal("3.#142857");
-      // 3.142857142857... = (3142857 - 3) / 999999 = 3142854/999999
       expect(result).toBeInstanceOf(Rational);
-
-      // Let's verify this is actually 22/7
-      const twentyTwoSevenths = new Rational(22, 7);
-
-      // Convert both to same denominator to compare
-      const resultDecimal = result.toNumber();
-      const expectedDecimal = twentyTwoSevenths.toNumber();
-
-      expect(Math.abs(resultDecimal - expectedDecimal)).toBeLessThan(0.000001);
+      expect(result.equals(new Rational(22, 7))).toBe(true);
     });
   });
 

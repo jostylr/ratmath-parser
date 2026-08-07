@@ -6,16 +6,8 @@ import { parseRepeatingDecimal } from '../index.js';
  * Roundtrip tests for relativeDecimalInterval() ↔ parseRepeatingDecimal()
  * 
  * These tests verify that converting a RationalInterval to a relative decimal
- * interval string and back produces a functionally equivalent interval.
- * 
- * IMPORTANT: Perfect roundtrip conversion is not always possible because:
- * 1. relativeDecimalInterval() finds the SHORTEST precise decimal, which may
- *    not have enough precision to exactly represent the original rationals
- * 2. The method trades exact rational representation for simpler notation
- * 3. Repeating decimals and complex fractions get approximated
- * 
- * Therefore, we test for "functional equivalence" (within numerical tolerance)
- * rather than exact rational equality.
+ * interval string and back preserves both rational endpoints exactly,
+ * including repeating and otherwise complex fractions.
  */
 describe('Relative Decimal Interval Roundtrip Tests', () => {
   describe('Basic Roundtrip Conversion', () => {
@@ -26,10 +18,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      // Note: We use tolerance because shortest decimal may not preserve exact rationals
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips symmetric intervals', () => {
@@ -39,9 +28,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips integer-based intervals', () => {
@@ -51,24 +38,19 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
   });
 
   describe('Complex Fraction Roundtrips', () => {
     it('roundtrips intervals with complex fractions', () => {
-      // Test case: [123/45, 345/67] - demonstrates lossy conversion
-      // Original: [2.733..., 5.149...] becomes approximate decimal representation
+      // Test case: [123/45, 345/67] exercises exact complex offsets
       const original = new RationalInterval(new Rational(123, 45), new Rational(345, 67));
       const decimalForm = original.relativeDecimalInterval();
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips intervals with large denominators', () => {
@@ -78,22 +60,18 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips intervals with repeating decimal endpoints', () => {
       // Test case: [1/3, 2/3] (0.333... to 0.666...)
-      // This demonstrates the fundamental limitation: exact thirds become decimal approximations
+      // Repeating endpoints remain exact through the relative notation.
       const original = new RationalInterval(new Rational(1, 3), new Rational(2, 3));
       const decimalForm = original.relativeDecimalInterval();
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
   });
 
@@ -105,9 +83,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips intervals spanning zero', () => {
@@ -117,9 +93,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips very small intervals', () => {
@@ -129,9 +103,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips point intervals (low equals high)', () => {
@@ -141,9 +113,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
   });
 
@@ -155,9 +125,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips intervals requiring 3 decimal place precision', () => {
@@ -167,9 +135,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
 
     it('roundtrips intervals requiring integer precision', () => {
@@ -179,9 +145,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
       const roundtrip = parseRepeatingDecimal(decimalForm);
 
       expect(roundtrip).toBeInstanceOf(RationalInterval);
-      // Check functional equivalence - the intervals should be approximately equal
-      expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-      expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+      expect(roundtrip.equals(original)).toBe(true);
     });
   });
 
@@ -210,9 +174,7 @@ describe('Relative Decimal Interval Roundtrip Tests', () => {
         const roundtrip = parseRepeatingDecimal(decimalForm);
 
         expect(roundtrip).toBeInstanceOf(RationalInterval);
-        // Check functional equivalence - the intervals should be approximately equal
-        expect(original.low.subtract(roundtrip.low).abs().toNumber()).toBeLessThan(1e-10);
-        expect(original.high.subtract(roundtrip.high).abs().toNumber()).toBeLessThan(1e-10);
+        expect(roundtrip.equals(original)).toBe(true);
       });
     });
   });
