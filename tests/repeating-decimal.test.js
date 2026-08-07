@@ -456,7 +456,12 @@ describe("parseRepeatingDecimal", () => {
       ];
 
       testCases.forEach((original) => {
-        const decimalInterval = original.toRepeatingDecimal(false);
+        // 355/113 has a 112-digit period. Request enough digits explicitly:
+        // the core API now intentionally limits exact output to 30 by default.
+        const decimalInterval = original.toRepeatingDecimal({
+          useRepeatNotation: false,
+          limit: 1000,
+        });
         const roundtrip = parseRepeatingDecimal(decimalInterval);
 
         expect(roundtrip).toBeInstanceOf(RationalInterval);
